@@ -131,6 +131,7 @@ export default function InteractiveMap() {
     }
   });
   const [gmReady, setGmReady] = useState(false);
+  const [svgSize, setSvgSize] = useState({ width: 900, height: 600 });
 
   // Persist gmZoom to localStorage
   useEffect(() => {
@@ -222,6 +223,56 @@ export default function InteractiveMap() {
       }, {}),
     []
   );
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const updateSize = () => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setSvgSize({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, [calibrationMode]);
+
+  const projectedBranches = useMemo(() => {
+    const positioned = eacBranches.map((branch) => {
+      const { x, y } = projectToSvg(branch.lat, branch.lng);
+      return { branch, x, y };
+    });
+
+    const pxPerSvgX = svgSize.width / vb.w;
+    const pxPerSvgY = svgSize.height / vb.h;
+
+    return positioned.map((item, idx) => {
+      let nearestPx = Number.POSITIVE_INFINITY;
+
+      positioned.forEach((other, otherIdx) => {
+        if (idx === otherIdx) return;
+        const dx = (item.x - other.x) * pxPerSvgX;
+        const dy = (item.y - other.y) * pxPerSvgY;
+        nearestPx = Math.min(nearestPx, Math.hypot(dx, dy));
+      });
+
+      const veryClose = nearestPx < 14;
+      const close = nearestPx < 28;
+
+      return {
+        ...item,
+        nearestPx,
+        compact: close,
+        radius: veryClose ? 1.6 : close ? 2.3 : item.branch.highlighted ? 6 : 4,
+        strokeWidth: close ? 0.8 : item.branch.highlighted ? 2 : 1.5,
+        showAdornment: !close,
+      };
+    });
+  }, [svgSize.height, svgSize.width, vb.h, vb.w]);
 
   // Zoom centered on mouse position
   const zoomAt = useCallback((screenX: number, screenY: number, factor: number) => {
@@ -501,15 +552,14 @@ export default function InteractiveMap() {
             );
           })}
 
-          {/* All markers always visible */}
-          {eacBranches.map((branch) => {
+          {/* Projected branch markers — adaptive size based on current SVG zoom */}
+          {projectedBranches.map(({ branch, x: bx, y: by, radius, strokeWidth, showAdornment, compact }) => {
             const isBranchActive = branch.id === activeBranchId;
-            const { x: bx, y: by } = projectToSvg(branch.lat, branch.lng);
 
             return (
               <g
                 key={branch.id}
-                className={`branch-marker${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
+                className={`branch-marker${compact ? " compact" : ""}${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
                   isBranchActive ? " active" : ""
                 }`}
                 onMouseEnter={(e) => handleMarkerEnter(branch, e)}
@@ -519,14 +569,15 @@ export default function InteractiveMap() {
                   setActiveBranchId(branch.id);
                 }}
               >
-                {branch.highlighted && <circle className="marker-pulse" cx={bx} cy={by} r="8" />}
+                {branch.highlighted && showAdornment && <circle className="marker-pulse" cx={bx} cy={by} r="8" />}
                 <circle
                   cx={bx}
                   cy={by}
-                  r={branch.highlighted ? 6 : 4}
+                  r={isBranchActive ? Math.max(radius + 1.2, 3.4) : radius}
+                  strokeWidth={strokeWidth}
                   className="marker-dot"
                 />
-                {branch.special && !branch.highlighted && (
+                {branch.special && !branch.highlighted && showAdornment && (
                   <path
                     className="marker-star"
                     d={`M ${bx} ${by - 8} L ${bx + 4} ${by - 4} L ${bx} ${by} L ${bx - 4} ${by - 4} Z`}

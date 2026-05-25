@@ -83,7 +83,12 @@
 
 .branch-marker:hover .marker-dot,
 .branch-marker.active .marker-dot {
-  r: 6;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+  stroke-width: 2;
+}
+
+.branch-marker.compact .marker-dot {
+  filter: none;
 }
 
 .branch-marker.special .marker-dot {
