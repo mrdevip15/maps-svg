@@ -1,39 +1,58 @@
+/* ========== Layout ========== */
+
 .app {
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 16px;
+  padding: 20px 16px;
 }
 
 .header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .header h1 {
-  font-size: 28px;
-  font-weight: 600;
-  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 4px;
   color: var(--text-h);
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
   color: var(--text);
   font-size: 14px;
   margin: 0;
+  font-weight: 400;
 }
 
 .map-wrapper {
   width: 100%;
-  max-width: 900px;
+  max-width: 1280px;
   display: flex;
   justify-content: center;
 }
 
+/* Map + Sidebar flex layout */
+.map-layout {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  background: var(--eac-bg);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 24px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border);
+}
+
+/* ========== Map ========== */
+
 .map-container {
   position: relative;
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .map-svg {
@@ -43,9 +62,127 @@
 }
 
 .map-svg path {
-  cursor: pointer;
-  transition: opacity 0.15s ease, filter 0.15s ease;
+  transition: opacity 0.2s ease, filter 0.2s ease;
 }
+
+/* ========== Branch Markers ========== */
+
+.branch-marker {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.branch-marker:hover,
+.branch-marker.active {
+  transform: translateY(-1px);
+}
+
+.marker-dot {
+  fill: var(--eac-primary);
+  stroke: #fff;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  transition: r 0.15s ease, fill 0.15s ease;
+}
+
+.branch-marker:hover .marker-dot,
+.branch-marker.active .marker-dot {
+  r: 6;
+}
+
+.branch-marker.special .marker-dot {
+  fill: var(--eac-special);
+}
+
+.branch-marker.highlighted .marker-dot {
+  fill: var(--eac-highlight);
+  stroke-width: 2;
+}
+
+.branch-marker.dimmed .marker-dot {
+  opacity: 0.3;
+}
+
+/* Star/diamond indicator for special branches */
+.marker-star {
+  fill: var(--eac-special);
+  opacity: 0.85;
+}
+
+.branch-marker.dimmed .marker-star {
+  opacity: 0.2;
+}
+
+/* Pulse animation for highlighted branches */
+.marker-pulse {
+  fill: var(--eac-highlight);
+  opacity: 0;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    opacity: 0.5;
+    r: 6;
+  }
+  100% {
+    opacity: 0;
+    r: 14;
+  }
+}
+
+/* ========== Legend ========== */
+
+.legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(6px);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .legend {
+    background: rgba(22, 23, 29, 0.9);
+    border-color: var(--border);
+  }
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.regular {
+  background: var(--eac-primary);
+}
+
+.legend-dot.special {
+  background: var(--eac-special);
+}
+
+.legend-dot.highlighted {
+  background: var(--eac-highlight);
+}
+
+/* ========== Tooltip ========== */
 
 .tooltip {
   position: fixed;
@@ -56,16 +193,16 @@
   padding: 10px 14px;
   border-radius: 8px;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  max-width: 240px;
+  max-width: 260px;
   font-family: system-ui, sans-serif;
 }
 
 .tooltip-name {
   font-weight: 600;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 
 .tooltip-pop {
@@ -73,9 +210,206 @@
   font-size: 12px;
 }
 
-.footer {
-  margin-top: 32px;
-  font-size: 12px;
+/* ========== Sidebar ========== */
+
+.sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: 600px;
+}
+
+.sidebar-summary {
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 2;
+}
+
+.summary-count {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--eac-primary);
+  line-height: 1;
+}
+
+.sidebar-summary span:last-child {
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Region group */
+.sidebar-region {
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-region:last-child {
+  border-bottom: none;
+}
+
+.sidebar-region-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.sidebar-region-header:hover {
+  background: var(--eac-bg);
+}
+
+.sidebar-region-header.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.sidebar-region-header span:last-child {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--code-bg);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.sidebar-region-header.active span:last-child {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* Branch list */
+.sidebar-region-list {
+  padding: 0 8px 8px;
+}
+
+.sidebar-branch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.sidebar-branch:hover,
+.sidebar-branch.active {
+  background: var(--eac-bg);
+}
+
+.sidebar-branch.special {
+  border-left: 3px solid var(--eac-special);
+}
+
+.sidebar-branch.highlighted {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid var(--eac-highlight);
+}
+
+.sidebar-branch.highlighted:hover,
+.sidebar-branch.highlighted.active {
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.branch-number {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.5;
+  min-width: 20px;
+  text-align: right;
+}
+
+.branch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.branch-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-h);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branch-area {
+  font-size: 11px;
   color: var(--text);
   opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ========== Footer ========== */
+
+.footer {
+  margin-top: 24px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.6;
+}
+
+/* ========== Responsive ========== */
+
+@media (max-width: 768px) {
+  .app {
+    padding: 12px 8px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .subtitle {
+    font-size: 12px;
+  }
+
+  .map-layout {
+    flex-direction: column;
+    border-radius: 8px;
+  }
+
+  .map-container {
+    flex: none;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 350px;
+  }
+
+  .legend {
+    bottom: 8px;
+    left: 8px;
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 10px;
+  }
 }

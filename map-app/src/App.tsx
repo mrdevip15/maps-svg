@@ -5,11 +5,8 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Peta Interaktif Indonesia</h1>
-        <p className="subtitle">
-          Sulawesi, Maluku & Papua — Arahkan kursor ke provinsi untuk melihat
-          data populasi
-        </p>
+        <h1>Peta Persebaran Cabang EAC</h1>
+        <p className="subtitle">Ruangguru English Academic Center — Wilayah Indonesia Timur</p>
       </header>
 
       <main className="map-wrapper">
@@ -17,7 +14,7 @@ function App() {
       </main>
 
       <footer className="footer">
-        <span>Data populasi: BPS 2020 (estimasi)</span>
+        <span>Data cabang EAC by Ruangguru</span>
       </footer>
     </div>
   );
