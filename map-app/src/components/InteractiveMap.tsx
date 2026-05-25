@@ -83,6 +83,8 @@ export default function InteractiveMap() {
   const [svgOpacity, setSvgOpacity] = useState(0.85);
   const [svgLocked, setSvgLocked] = useState(false);
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>("x1");
+  const [coordInput, setCoordInput] = useState("");
+  const [mapsSync, setMapsSync] = useState(true);
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
@@ -243,6 +245,37 @@ export default function InteractiveMap() {
 
   const viewBoxStr = `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
 
+  // Sync: compute Google Maps zoom level from SVG viewBox width
+  // SVG w=470 → GM zoom ~5, w=40 → GM zoom ~16
+  const gmZoom = Math.round(5 + (1 - (vb.w - MIN_W) / (MAX_W - MIN_W)) * 11);
+
+  // For future pan sync
+
+  // Default: protobuf embed, no pin, centered on eastern Indonesia
+  const mapsUrlDefault = `https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d6367616.0!2d117.5!3d-2.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sid!4v1`;
+
+  // With marker: simple embed centers on the coordinate + shows pin
+  const [markerLat, setMarkerLat] = useState<number | null>(null);
+  const [markerLng, setMarkerLng] = useState<number | null>(null);
+
+  const mapsUrlWithMarker = (markerLat !== null && markerLng !== null)
+    ? `https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${gmZoom}&output=embed`
+    : mapsUrlDefault;
+
+  const handleGoToCoord = useCallback(() => {
+    const parts = coordInput.split(",").map((s) => parseFloat(s.trim()));
+    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      setMarkerLat(parts[0]);
+      setMarkerLng(parts[1]);
+    }
+  }, [coordInput]);
+
+  const clearMarker = useCallback(() => {
+    setMarkerLat(null);
+    setMarkerLng(null);
+    setCoordInput("");
+  }, []);
+
   return (
     <div className="map-layout">
       <div className="map-container" onMouseMove={tooltip ? moveTooltip : undefined}>
@@ -250,7 +283,8 @@ export default function InteractiveMap() {
         {calibrationMode && (
           <div className="calibration-bg">
             <iframe
-              src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d6367616.0!2d117.5!3d-2.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sid!4v1&layer=none&maptype=satellite"
+              key={mapsUrlWithMarker}
+              src={mapsSync ? mapsUrlWithMarker : mapsUrlDefault}
               width="100%"
               height="100%"
               style={{ border: 0 }}
@@ -338,15 +372,6 @@ export default function InteractiveMap() {
 
         {/* Zoom controls */}
         <div className="zoom-controls">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={sliderValue}
-            onChange={(e) => handleSliderZoom(parseInt(e.target.value))}
-            className="zoom-slider"
-            title="Zoom Level"
-          />
           <div className="zoom-preset-group">
             {(["x1", "x5", "x10"] as ZoomPreset[]).map((p) => (
               <button
@@ -369,7 +394,22 @@ export default function InteractiveMap() {
           >🎯</button>
         </div>
 
-        {/* Calibration opacity slider */}
+        {/* Horizontal zoom slider */}
+        <div className="zoom-slider-wrap">
+          <span className="zoom-slider-label">−</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={sliderValue}
+            onChange={(e) => handleSliderZoom(parseInt(e.target.value))}
+            className="zoom-slider"
+            title="Zoom Level"
+          />
+          <span className="zoom-slider-label">+</span>
+        </div>
+
+        {/* Calibration controls */}
         {calibrationMode && (
           <div className="calibration-panel">
             <label className="calibration-label">
@@ -384,6 +424,33 @@ export default function InteractiveMap() {
               onChange={(e) => setSvgOpacity(parseFloat(e.target.value))}
               className="calibration-slider"
             />
+
+            <div className="calibration-row">
+              <button
+                type="button"
+                className={`sync-toggle${mapsSync ? " active" : ""}`}
+                onClick={() => setMapsSync((v) => !v)}
+              >
+                {mapsSync ? "🔗 Sync zoom ON" : "⛓️ Sync zoom OFF"}
+              </button>
+            </div>
+
+            <div className="coord-input-group">
+              <span className="coord-input-label">📍</span>
+              <input
+                type="text"
+                placeholder="-5.198544, 119.446975"
+                value={coordInput}
+                onChange={(e) => setCoordInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleGoToCoord()}
+                className="coord-input"
+              />
+              <button type="button" className="coord-go-btn" onClick={handleGoToCoord}>Go</button>
+              {markerLat !== null && (
+                <button type="button" className="coord-clear-btn" onClick={clearMarker}>×</button>
+              )}
+            </div>
+
             <button
               type="button"
               className={`lock-toggle${svgLocked ? " locked" : ""}`}
@@ -392,7 +459,7 @@ export default function InteractiveMap() {
               {svgLocked ? "🔓 Unlock SVG — interaksi Google Maps" : "🔒 Lock SVG — interaksi Google Maps"}
             </button>
             <p className="calibration-hint">
-              Lock SVG → pan/zoom Google Maps di bawah. Unlock → klik peta untuk ambil koordinat.
+              Sync ON → zoom SVG otomatis sync Google Maps. Lock SVG → pan/zoom Google Maps manual.
             </p>
           </div>
         )}
