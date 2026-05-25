@@ -857,6 +857,33 @@
   padding: 0 8px 8px;
 }
 
+.sidebar-city {
+  padding: 4px 0 6px;
+}
+
+.sidebar-city + .sidebar-city {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.sidebar-city-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px 4px 34px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.72;
+}
+
+.sidebar-city-header span:last-child {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
 .sidebar-branch {
   display: flex;
   align-items: center;

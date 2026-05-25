@@ -51,7 +51,7 @@ interface RefPoint {
 }
 
 const DEFAULT_VB: VB = { x: 500, y: 10, w: 470, h: 320 };
-const MIN_W = 40;
+const MIN_W = 8;
 const MAX_W = 600;
 const BASE_FACTOR = 0.08;
 
@@ -83,25 +83,37 @@ function parseSvgPaths(svgText: string): SvgPath[] {
   return results;
 }
 
-function groupBranchesByRegion(branches: EacBranch[]) {
-  return branches.reduce<Array<{ region: string; regionCode: string; branches: EacBranch[] }>>(
-    (groups, branch) => {
-      const group = groups.find((item) => item.regionCode === branch.regionCode);
+function groupBranchesByProvinceCity(branches: EacBranch[]) {
+  return branches.reduce<
+    Array<{
+      region: string;
+      regionCode: string;
+      total: number;
+      cities: Array<{ city: string; branches: EacBranch[] }>;
+    }>
+  >((groups, branch) => {
+    let provinceGroup = groups.find((item) => item.regionCode === branch.regionCode);
 
-      if (group) {
-        group.branches.push(branch);
-      } else {
-        groups.push({
-          region: branch.region,
-          regionCode: branch.regionCode,
-          branches: [branch],
-        });
-      }
+    if (!provinceGroup) {
+      provinceGroup = {
+        region: branch.region,
+        regionCode: branch.regionCode,
+        total: 0,
+        cities: [],
+      };
+      groups.push(provinceGroup);
+    }
 
-      return groups;
-    },
-    []
-  );
+    let cityGroup = provinceGroup.cities.find((item) => item.city === branch.city);
+    if (!cityGroup) {
+      cityGroup = { city: branch.city, branches: [] };
+      provinceGroup.cities.push(cityGroup);
+    }
+
+    cityGroup.branches.push(branch);
+    provinceGroup.total += 1;
+    return groups;
+  }, []);
 }
 
 export default function InteractiveMap() {
@@ -215,7 +227,7 @@ export default function InteractiveMap() {
   }
 
   const paths = useMemo(() => (svgRaw ? parseSvgPaths(svgRaw) : []), [svgRaw]);
-  const branchGroups = useMemo(() => groupBranchesByRegion(eacBranches), []);
+  const branchGroups = useMemo(() => groupBranchesByProvinceCity(eacBranches), []);
   const branchesByRegion = useMemo(
     () =>
       eacBranches.reduce<Record<string, EacBranch[]>>((result, branch) => {
@@ -585,7 +597,8 @@ export default function InteractiveMap() {
                 d={d}
                 fill={fill}
                 stroke="#ffffff"
-                strokeWidth={1}
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
                 className={isHovered || isActiveRegion ? "province-active" : undefined}
                 style={{
                   cursor: "grab",
@@ -816,28 +829,37 @@ export default function InteractiveMap() {
           <section className="sidebar-region" key={group.regionCode}>
             <div className="sidebar-region-header">
               <span>{group.region}</span>
-              <span>{group.branches.length}</span>
+              <span>{group.total}</span>
             </div>
 
             <div className="sidebar-region-list">
-              {group.branches.map((branch) => (
-                <button
-                  type="button"
-                  key={branch.id}
-                  className={`sidebar-branch${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
-                    activeBranchId === branch.id ? " active" : ""
-                  }`}
-                  onMouseEnter={() => setActiveBranchId(branch.id)}
-                  onMouseLeave={() => setActiveBranchId(null)}
-                  onFocus={() => setActiveBranchId(branch.id)}
-                  onBlur={() => setActiveBranchId(null)}
-                >
-                  <span className="branch-number">{branch.id}</span>
-                  <span className="branch-text">
-                    <span className="branch-name">{branch.name}{branch.special ? " ✦" : ""}</span>
-                    <span className="branch-area">{branch.area}</span>
-                  </span>
-                </button>
+              {group.cities.map((cityGroup) => (
+                <div className="sidebar-city" key={`${group.regionCode}-${cityGroup.city}`}>
+                  <div className="sidebar-city-header">
+                    <span>{cityGroup.city}</span>
+                    <span>{cityGroup.branches.length}</span>
+                  </div>
+
+                  {cityGroup.branches.map((branch) => (
+                    <button
+                      type="button"
+                      key={branch.id}
+                      className={`sidebar-branch${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
+                        activeBranchId === branch.id ? " active" : ""
+                      }`}
+                      onMouseEnter={() => setActiveBranchId(branch.id)}
+                      onMouseLeave={() => setActiveBranchId(null)}
+                      onFocus={() => setActiveBranchId(branch.id)}
+                      onBlur={() => setActiveBranchId(null)}
+                    >
+                      <span className="branch-number">{branch.id}</span>
+                      <span className="branch-text">
+                        <span className="branch-name">{branch.name}{branch.special ? " ✦" : ""}</span>
+                        <span className="branch-area">{branch.area}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </section>
