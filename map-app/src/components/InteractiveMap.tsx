@@ -107,6 +107,7 @@ function groupBranchesByRegion(branches: EacBranch[]) {
 export default function InteractiveMap() {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [activeRegionIdx, setActiveRegionIdx] = useState<number | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<number | null>(null);
   const [svgRaw, setSvgRaw] = useState<string | null>(null);
   const [vb, setVb] = useState<VB>(DEFAULT_VB);
@@ -353,7 +354,10 @@ export default function InteractiveMap() {
     };
   }, [vb.w, vb.h]);
 
-  const resetZoom = useCallback(() => setVb(DEFAULT_VB), []);
+  const resetZoom = useCallback(() => {
+    setVb(DEFAULT_VB);
+    setActiveRegionIdx(null);
+  }, []);
 
   // Debug coordinate picker — uses SVG's own CTM for absolute coordinates (pan/zoom independent)
   const handleDebugClick = useCallback(
@@ -428,6 +432,7 @@ export default function InteractiveMap() {
         w: nextW,
         h: nextH,
       });
+      setActiveRegionIdx(idx);
     },
     [calibrationMode]
   );
@@ -558,6 +563,21 @@ export default function InteractiveMap() {
           {paths.map(({ d, fill, index }) => {
             const isTarget = targetIndices.has(index);
             const isHovered = index === hoveredIdx;
+            const isActiveRegion = index === activeRegionIdx;
+            const hasActiveRegion = activeRegionIdx !== null;
+            const provinceOpacity = hasActiveRegion
+              ? isActiveRegion
+                ? 1
+                : isHovered
+                  ? 0.72
+                  : isTarget
+                    ? 0.22
+                    : 0.08
+              : isHovered
+                ? 1
+                : isTarget
+                  ? 1
+                  : 0.2;
 
             return (
               <path
@@ -566,11 +586,12 @@ export default function InteractiveMap() {
                 fill={fill}
                 stroke="#ffffff"
                 strokeWidth={1}
-                className={isHovered ? "province-active" : undefined}
+                className={isHovered || isActiveRegion ? "province-active" : undefined}
                 style={{
                   cursor: "grab",
-                  opacity: isHovered ? 1 : isTarget ? 1 : 0.2,
-                  transition: "opacity 0.15s ease",
+                  opacity: provinceOpacity,
+                  transition: "opacity 0.2s ease, filter 0.2s ease",
+                  filter: isActiveRegion ? "drop-shadow(0 0 5px rgba(255,255,255,0.45))" : undefined,
                 }}
                 onMouseEnter={isTarget ? (e) => handleProvinceEnter(index, e) : undefined}
                 onMouseLeave={isTarget ? handleProvinceLeave : undefined}
