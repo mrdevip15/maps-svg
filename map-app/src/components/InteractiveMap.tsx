@@ -68,15 +68,34 @@ function groupBranchesByRegion(branches: EacBranch[]) {
   );
 }
 
-/** Compute a viewBox that frames all branches in a region with padding. */
-function regionViewBox(branches: EacBranch[]): { x: number; y: number; w: number; h: number } {
-  const padding = 28;
-  const minX = Math.min(...branches.map((b) => b.x)) - padding;
-  const maxX = Math.max(...branches.map((b) => b.x)) + padding;
-  const minY = Math.min(...branches.map((b) => b.y)) - padding;
-  const maxY = Math.max(...branches.map((b) => b.y)) + padding;
+/** Extract all coordinate points from an SVG path `d` attribute. */
+function extractPathPoints(d: string): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  // Match all number sequences after path commands (M, L, C, Q, S, T, A, Z)
+  const re = /[\d.\-]+/g;
+  let m: RegExpExecArray | null;
+  const nums: number[] = [];
+  while ((m = re.exec(d)) !== null) {
+    nums.push(parseFloat(m[0]));
+  }
+  for (let i = 0; i < nums.length - 1; i += 2) {
+    pts.push([nums[i], nums[i + 1]]);
+  }
+  return pts;
+}
 
-  // Maintain aspect ratio close to the default
+/** Compute a viewBox centered on a province SVG path's bounding box. */
+function pathViewBox(d: string): { x: number; y: number; w: number; h: number } {
+  const pts = extractPathPoints(d);
+  if (pts.length === 0) return DEFAULT_VB;
+
+  const padding = 24;
+  const minX = Math.min(...pts.map((p) => p[0])) - padding;
+  const maxX = Math.max(...pts.map((p) => p[0])) + padding;
+  const minY = Math.min(...pts.map((p) => p[1])) - padding;
+  const maxY = Math.max(...pts.map((p) => p[1])) + padding;
+
+  // Maintain aspect ratio matching the default viewBox
   const w = maxX - minX;
   const h = maxY - minY;
   const targetAspect = DEFAULT_VB.w / DEFAULT_VB.h;
@@ -127,14 +146,15 @@ export default function InteractiveMap() {
     []
   );
 
-  // Pre-compute viewboxes per region
+  // Pre-compute viewboxes per region from the province SVG path shape
   const viewBoxByRegion = useMemo(() => {
     const map: Record<string, { x: number; y: number; w: number; h: number }> = {};
-    for (const group of branchGroups) {
-      map[group.regionCode] = regionViewBox(group.branches);
+    for (const [code, pathIdx] of provinceIndexByCode) {
+      const p = paths[pathIdx];
+      if (p) map[code] = pathViewBox(p.d);
     }
     return map;
-  }, [branchGroups]);
+  }, [paths]);
 
   // Smoothly animate viewBox transition
   useEffect(() => {
