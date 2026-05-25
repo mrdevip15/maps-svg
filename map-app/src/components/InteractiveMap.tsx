@@ -164,7 +164,7 @@ export default function InteractiveMap() {
   const [svgOpacity, setSvgOpacity] = useState(0.85);
   const [svgLocked, setSvgLocked] = useState(false);
   const [syncSvgToMaps, setSyncSvgToMaps] = useState(true);
-  const [zoomPreset, setZoomPreset] = useState<ZoomPreset>("x1");
+  const zoomPreset: ZoomPreset = "x1";
   const [gmZoom, setGmZoom] = useState(() => {
     const saved = localStorage.getItem("gmZoom");
     return saved ? parseInt(saved, 10) : 5;
@@ -626,9 +626,30 @@ export default function InteractiveMap() {
     navigator.clipboard.writeText(`${debugPoint.x.toFixed(1)}, ${debugPoint.y.toFixed(1)}`);
   }, [debugPoint]);
 
+  const mapBreadcrumb = useMemo(() => {
+    if (!activeFocus) return ["Indonesia Timur"];
+
+    if (activeFocus.type === "island") return [activeFocus.label];
+    if (activeFocus.type === "province") {
+      return [getIslandForRegionCode(activeFocus.regionCodes[0]), activeFocus.label];
+    }
+
+    return [getIslandForRegionCode(activeFocus.regionCodes[0]), activeFocus.label];
+  }, [activeFocus]);
+
   return (
     <div className="map-layout">
       <div className="map-container" onMouseMove={tooltip ? moveTooltip : undefined}>
+        <div className="map-breadcrumb" aria-label="Posisi peta saat ini">
+          {mapBreadcrumb.map((item, index) => (
+            <span className="map-breadcrumb-item" key={`${item}-${index}`}>
+              {index > 0 && <span className="map-breadcrumb-separator">/</span>}
+              {item}
+            </span>
+          ))}
+        </div>
+
+        <div className="map-viewport">
         {/* Google Maps background for calibration */}
         {calibrationMode && (
           <div className="calibration-bg">
@@ -732,21 +753,7 @@ export default function InteractiveMap() {
         </svg>
 
         {/* Zoom controls */}
-        <div className="zoom-controls">
-          <div className="zoom-preset-group">
-            {(["x1", "x5", "x10"] as ZoomPreset[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={`zoom-preset-btn${zoomPreset === p ? " active" : ""}`}
-                onClick={() => setZoomPreset(p)}
-                title={`Zoom precision ${p}`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
+        <div className="zoom-controls" />
 
         {/* Horizontal zoom slider */}
         <div className="zoom-slider-wrap">
@@ -886,6 +893,7 @@ export default function InteractiveMap() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       <aside className="sidebar" aria-label="Daftar cabang EAC">
@@ -904,51 +912,44 @@ export default function InteractiveMap() {
 
         {branchGroups.map((islandGroup) => (
           <details className="sidebar-region sidebar-island" key={islandGroup.island}>
-            <summary className="sidebar-region-header">
-              <button
-                type="button"
-                className="sidebar-focus-btn"
-                onClick={(e) => {
-                  e.preventDefault();
+            <summary
+              className="sidebar-region-header"
+              onClick={() => {
                   const island = ISLANDS.find((item) => item.name === islandGroup.island);
                   const regionCodes = island ? [...island.regionCodes] : islandGroup.provinces.map((province) => province.regionCode);
                   setActiveFocus({ type: "island", label: islandGroup.island, regionCodes });
                   setActiveRegionIdx(null);
                   focusRegionCodes(regionCodes);
-                }}
-              >
+              }}
+            >
+              <span className="sidebar-focus-label">
                 {islandGroup.island}
-              </button>
+              </span>
               <span>{islandGroup.total}</span>
             </summary>
 
             <div className="sidebar-region-list">
               {islandGroup.provinces.map((provinceGroup) => (
                 <details className="sidebar-province" key={provinceGroup.regionCode}>
-                  <summary className="sidebar-province-header">
-                    <button
-                      type="button"
-                      className="sidebar-focus-btn"
-                      onClick={(e) => {
-                        e.preventDefault();
+                  <summary
+                    className="sidebar-province-header"
+                    onClick={() => {
                         setActiveFocus({ type: "province", label: provinceGroup.region, regionCodes: [provinceGroup.regionCode] });
                         setActiveRegionIdx(null);
                         focusRegionCodes([provinceGroup.regionCode]);
-                      }}
-                    >
+                    }}
+                  >
+                    <span className="sidebar-focus-label">
                       {provinceGroup.region}
-                    </button>
+                    </span>
                     <span>{provinceGroup.total}</span>
                   </summary>
 
                   {provinceGroup.cities.map((cityGroup) => (
                     <details className="sidebar-city" key={`${provinceGroup.regionCode}-${cityGroup.city}`}>
-                      <summary className="sidebar-city-header">
-                        <button
-                          type="button"
-                          className="sidebar-focus-btn"
-                          onClick={(e) => {
-                            e.preventDefault();
+                      <summary
+                        className="sidebar-city-header"
+                        onClick={() => {
                             setActiveFocus({
                               type: "city",
                               label: cityGroup.city,
@@ -957,10 +958,11 @@ export default function InteractiveMap() {
                             });
                             setActiveRegionIdx(null);
                             focusBranches(cityGroup.branches);
-                          }}
-                        >
+                        }}
+                      >
+                        <span className="sidebar-focus-label">
                           {cityGroup.city}
-                        </button>
+                        </span>
                         <span>{cityGroup.branches.length}</span>
                       </summary>
 

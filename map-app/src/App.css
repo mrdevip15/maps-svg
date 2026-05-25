@@ -55,6 +55,36 @@
   min-width: 0;
 }
 
+.map-breadcrumb {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.map-breadcrumb-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 24px;
+  line-height: 1.05;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  color: var(--text-h);
+}
+
+.map-breadcrumb-separator {
+  color: var(--text);
+  opacity: 0.35;
+  font-weight: 500;
+}
+
+.map-viewport {
+  position: relative;
+}
+
 .map-svg {
   width: 100%;
   height: auto;
@@ -871,19 +901,15 @@
   transform: rotate(90deg);
 }
 
-.sidebar-focus-btn {
+.sidebar-focus-label {
   flex: 1;
   min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
   color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
-.sidebar-focus-btn:hover {
+.sidebar-region-header:hover .sidebar-focus-label,
+.sidebar-province-header:hover .sidebar-focus-label,
+.sidebar-city-header:hover .sidebar-focus-label {
   color: var(--eac-primary);
 }
 
