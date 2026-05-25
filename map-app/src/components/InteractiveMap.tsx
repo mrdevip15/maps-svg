@@ -160,7 +160,7 @@ export default function InteractiveMap() {
   const [svgRaw, setSvgRaw] = useState<string | null>(null);
   const [vb, setVb] = useState<VB>(DEFAULT_VB);
   const [debugPoint, setDebugPoint] = useState<{ x: number; y: number } | null>(null);
-  const [calibrationMode, setCalibrationMode] = useState(false);
+  const [calibrationMode] = useState(false);
   const [svgOpacity, setSvgOpacity] = useState(0.85);
   const [svgLocked, setSvgLocked] = useState(false);
   const [syncSvgToMaps, setSyncSvgToMaps] = useState(true);
@@ -746,13 +746,6 @@ export default function InteractiveMap() {
               </button>
             ))}
           </div>
-          <button type="button" className="zoom-btn zoom-reset" onClick={resetZoom} title="Reset">⟲</button>
-          <button
-            type="button"
-            className={`zoom-btn calibrate-btn${calibrationMode ? " active" : ""}`}
-            onClick={() => setCalibrationMode((v) => !v)}
-            title="Toggle Calibration Mode"
-          >🎯</button>
         </div>
 
         {/* Horizontal zoom slider */}
@@ -873,11 +866,7 @@ export default function InteractiveMap() {
           </div>
         )}
 
-        <div className="legend" aria-label="Legenda marker cabang">
-          <div className="legend-item"><span className="legend-dot regular" /> Cabang reguler</div>
-          <div className="legend-item"><span className="legend-dot special" /> Cabang khusus ✦</div>
-          <div className="legend-item"><span className="legend-dot highlighted" /> Fokus utama</div>
-        </div>
+       
 
         {/* Debug coordinate picker */}
         {debugPoint && (
@@ -914,7 +903,7 @@ export default function InteractiveMap() {
         )}
 
         {branchGroups.map((islandGroup) => (
-          <details className="sidebar-region sidebar-island" key={islandGroup.island} open>
+          <details className="sidebar-region sidebar-island" key={islandGroup.island}>
             <summary className="sidebar-region-header">
               <button
                 type="button"
@@ -935,7 +924,7 @@ export default function InteractiveMap() {
 
             <div className="sidebar-region-list">
               {islandGroup.provinces.map((provinceGroup) => (
-                <details className="sidebar-province" key={provinceGroup.regionCode} open>
+                <details className="sidebar-province" key={provinceGroup.regionCode}>
                   <summary className="sidebar-province-header">
                     <button
                       type="button"

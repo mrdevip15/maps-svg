@@ -6,7 +6,7 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>Peta Persebaran Cabang EAC</h1>
-        <p className="subtitle">Ruangguru English Academic Center — Wilayah Indonesia Timur</p>
+        <p className="subtitle">English Academy Center by Ruangguru - Wilayah Indonesia Timur</p>
       </header>
 
       <main className="map-wrapper">
