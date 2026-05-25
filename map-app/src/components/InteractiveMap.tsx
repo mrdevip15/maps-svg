@@ -75,6 +75,14 @@ function getIslandForRegionCode(regionCode: string) {
   return ISLANDS.find((island) => (island.regionCodes as readonly string[]).includes(regionCode))?.name ?? "Lainnya";
 }
 
+function getBranchSvgPosition(branch: EacBranch) {
+  if (branch.svgX !== undefined && branch.svgY !== undefined) {
+    return { x: branch.svgX, y: branch.svgY };
+  }
+
+  return projectToSvg(branch.lat, branch.lng);
+}
+
 function parseSvgPaths(svgText: string): SvgPath[] {
   const regex = /<path[^>]*>/g;
   const results: SvgPath[] = [];
@@ -257,7 +265,7 @@ export default function InteractiveMap() {
   }, [focusSvgBounds]);
 
   const focusBranches = useCallback((branches: EacBranch[]) => {
-    const points = branches.map((branch) => projectToSvg(branch.lat, branch.lng));
+    const points = branches.map(getBranchSvgPosition);
     if (points.length === 0) return;
     const minX = Math.min(...points.map((point) => point.x));
     const minY = Math.min(...points.map((point) => point.y));
@@ -331,7 +339,7 @@ export default function InteractiveMap() {
 
   const projectedBranches = useMemo(() => {
     const positioned = eacBranches.map((branch) => {
-      const { x, y } = projectToSvg(branch.lat, branch.lng);
+      const { x, y } = getBranchSvgPosition(branch);
       return { branch, x, y };
     });
 

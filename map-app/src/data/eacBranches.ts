@@ -7,6 +7,8 @@ export interface EacBranch {
   regionCode: string;
   lat: number;
   lng: number;
+  svgX?: number;
+  svgY?: number;
   special: boolean;
   highlighted: boolean;
 }
@@ -381,6 +383,8 @@ export const eacBranches: EacBranch[] = [
     regionCode: "IDMA",
     lat: -3.69542,
     lng: 128.18143,
+    svgX: 708.9,
+    svgY: 194.3,
     special: false,
     highlighted: false,
   },
@@ -393,6 +397,8 @@ export const eacBranches: EacBranch[] = [
     regionCode: "IDPA",
     lat: -2.59732,
     lng: 140.63124,
+    svgX: 934.0,
+    svgY: 197.1,
     special: false,
     highlighted: false,
   },
