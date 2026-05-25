@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { populationData } from "../data/population";
 import { pathToProvince } from "../data/provinceMap";
 
@@ -9,99 +9,100 @@ interface TooltipData {
   y: number;
 }
 
-export default function InteractiveMap() {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-  const [svgContent, setSvgContent] = useState<string>("");
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+// Pre-computed: which SVG path indices are target provinces
+const targetIndices = new Set(Object.keys(pathToProvince).map(Number));
 
-  // Fetch SVG
-  useEffect(() => {
+function parseSvgPaths(svgText: string): Array<{ d: string; fill: string; index: number }> {
+  const regex = /<path[^>]*>/g;
+  const results: Array<{ d: string; fill: string; index: number }> = [];
+  let match;
+  while ((match = regex.exec(svgText)) !== null) {
+    const tag = match[0];
+    const dMatch = tag.match(/d="([^"]*)"/);
+    const fillMatch = tag.match(/fill="([^"]*)"/);
+    if (dMatch) {
+      results.push({
+        d: dMatch[1],
+        fill: fillMatch ? fillMatch[1] : "#2d5aa6",
+        index: results.length,
+      });
+    }
+  }
+  return results;
+}
+
+export default function InteractiveMap() {
+  const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [svgRaw, setSvgRaw] = useState<string | null>(null);
+
+  // Fetch SVG once
+  if (typeof window !== "undefined" && !svgRaw) {
     fetch("/all_region.svg")
       .then((r) => r.text())
-      .then((text) => setSvgContent(text));
-  }, []);
+      .then(setSvgRaw)
+      .catch(console.error);
+  }
 
-  // Attach event listeners after SVG content is set
-  useEffect(() => {
-    if (!svgContent || !svgRef.current) return;
+  const paths = useMemo(() => (svgRaw ? parseSvgPaths(svgRaw) : []), [svgRaw]);
 
-    const paths = svgRef.current.querySelectorAll("path");
-    paths.forEach((path, i) => {
-      path.dataset.pathIndex = String(i);
-      path.style.cursor = "pointer";
-      path.style.transition = "opacity 0.2s, filter 0.2s";
-
-      path.addEventListener("mouseenter", onEnter);
-      path.addEventListener("mouseleave", onLeave);
-    });
-
-    return () => {
-      paths.forEach((path) => {
-        path.removeEventListener("mouseenter", onEnter);
-        path.removeEventListener("mouseleave", onLeave);
+  const handleMouseEnter = useCallback((idx: number, e: React.MouseEvent) => {
+    const code = pathToProvince[idx];
+    const data = code ? populationData[code] : undefined;
+    if (data) {
+      setTooltip({
+        name: data.name,
+        population: data.population,
+        x: e.clientX + 14,
+        y: e.clientY - 10,
       });
-    };
-
-    function onEnter(e: Event) {
-      const target = e.target as SVGPathElement;
-      const idx = Number(target.dataset.pathIndex);
-      const code = pathToProvince[idx];
-      const data = code ? populationData[code] : undefined;
-      if (data) {
-        const me = e as MouseEvent;
-        setTooltip({
-          name: data.name,
-          population: data.population,
-          x: me.clientX + 14,
-          y: me.clientY - 10,
-        });
-        setHoveredIdx(idx);
-      }
+      setHoveredIdx(idx);
     }
-
-    function onLeave() {
-      setTooltip(null);
-      setHoveredIdx(null);
-    }
-  }, [svgContent]);
-
-  // Apply hover highlight
-  useEffect(() => {
-    if (!svgRef.current) return;
-    const paths = svgRef.current.querySelectorAll("path");
-    paths.forEach((path, i) => {
-      if (i === hoveredIdx) {
-        path.style.opacity = "0.8";
-        path.style.filter = "brightness(1.35)";
-      } else if (hoveredIdx !== null) {
-        path.style.opacity = "0.4";
-        path.style.filter = "none";
-      } else {
-        path.style.opacity = "1";
-        path.style.filter = "none";
-      }
-    });
-  }, [hoveredIdx]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    setTooltip((prev) =>
-      prev ? { ...prev, x: e.clientX + 14, y: e.clientY - 10 } : null
-    );
   }, []);
 
-  // Strip outer <svg> tag and keep only path elements
-  const pathsOnly = svgContent.replace(/<\/*svg[^>]*>/g, "").trim();
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      setTooltip((prev) =>
+        prev ? { ...prev, x: e.clientX + 14, y: e.clientY - 10 } : null
+      );
+    },
+    []
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setTooltip(null);
+    setHoveredIdx(null);
+  }, []);
 
   return (
-    <div className="map-container" onMouseMove={handleMouseMove}>
+    <div className="map-container" onMouseMove={hoveredIdx !== null ? handleMouseMove : undefined}>
       <svg
-        ref={svgRef}
         viewBox="334.8 60 407.6 150"
         preserveAspectRatio="xMinYMin"
         className="map-svg"
-        dangerouslySetInnerHTML={{ __html: pathsOnly }}
-      />
+      >
+        {paths.map(({ d, fill, index }) => {
+          const isTarget = targetIndices.has(index);
+          const isHovered = index === hoveredIdx;
+
+          return (
+            <path
+              key={index}
+              d={d}
+              fill={fill}
+              stroke="#ffffff"
+              strokeWidth={1.5}
+              style={{
+                cursor: isTarget ? "pointer" : "default",
+                opacity: hoveredIdx !== null ? (isHovered ? 1 : isTarget ? 0.45 : 0.15) : (isTarget ? 1 : 0.2),
+                transition: "opacity 0.15s ease",
+              }}
+              onMouseEnter={isTarget ? (e) => handleMouseEnter(index, e) : undefined}
+              onMouseLeave={isTarget ? handleMouseLeave : undefined}
+            />
+          );
+        })}
+      </svg>
 
       {tooltip && (
         <div className="tooltip">
