@@ -114,6 +114,7 @@ export default function InteractiveMap() {
   const [calibrationMode, setCalibrationMode] = useState(false);
   const [svgOpacity, setSvgOpacity] = useState(0.85);
   const [svgLocked, setSvgLocked] = useState(false);
+  const [syncSvgToMaps, setSyncSvgToMaps] = useState(true);
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>("x1");
   const [gmZoom, setGmZoom] = useState(() => {
     const saved = localStorage.getItem("gmZoom");
@@ -171,6 +172,15 @@ export default function InteractiveMap() {
 
   const gmZoomIn = useCallback(() => setGmZoom((z) => Math.min(18, z + 1)), []);
   const gmZoomOut = useCallback(() => setGmZoom((z) => Math.max(1, z - 1)), []);
+
+  const centerSvgOnLatLng = useCallback((lat: number, lng: number) => {
+    const { x, y } = projectToSvg(lat, lng);
+    setVb((prev) => ({
+      ...prev,
+      x: x - prev.w / 2,
+      y: y - prev.h / 2,
+    }));
+  }, []);
 
   // --- Bulk calibration hooks ---
   const goToRef = useCallback(
@@ -430,11 +440,13 @@ export default function InteractiveMap() {
     if (!rp) return;
     googleMapRef.current.panTo({ lat: rp.lat, lng: rp.lng });
 
+    if (syncSvgToMaps) centerSvgOnLatLng(rp.lat, rp.lng);
+
     googleMarkersRef.current.forEach((marker, i) => {
       marker.setAnimation(i === activeRefIdx ? window.google.maps.Animation.BOUNCE : null);
       marker.setZIndex(i === activeRefIdx ? 999 : undefined);
     });
-  }, [gmReady, refPoints, activeRefIdx]);
+  }, [gmReady, refPoints, activeRefIdx, syncSvgToMaps, centerSvgOnLatLng]);
 
   const copyDebugCoord = useCallback(() => {
     if (!debugPoint) return;
@@ -566,7 +578,11 @@ export default function InteractiveMap() {
 
         {/* Calibration controls */}
         {calibrationMode && (
-          <div className="calibration-panel">
+          <div
+            className="calibration-panel"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="calibration-title">🎯 Calibration Mode</div>
 
             <label className="calibration-label">
@@ -619,6 +635,14 @@ export default function InteractiveMap() {
               <span className="gm-zoom-value">{gmZoom}</span>
               <button type="button" className="gm-zoom-btn" onClick={gmZoomIn}>+</button>
             </div>
+
+            <button
+              type="button"
+              className={`sync-toggle${syncSvgToMaps ? " active" : ""}`}
+              onClick={() => setSyncSvgToMaps((v) => !v)}
+            >
+              {syncSvgToMaps ? "🔗 SVG sync ON" : "⛓️ SVG sync OFF"}
+            </button>
 
             <button
               type="button"
