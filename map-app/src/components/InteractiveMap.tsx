@@ -77,7 +77,7 @@ export default function InteractiveMap() {
   return (
     <div className="map-container" onMouseMove={hoveredIdx !== null ? handleMouseMove : undefined}>
       <svg
-        viewBox="334.8 60 407.6 150"
+        viewBox="500 10 470 320"
         preserveAspectRatio="xMinYMin"
         className="map-svg"
       >
