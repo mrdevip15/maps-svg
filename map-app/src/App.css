@@ -68,6 +68,10 @@
   transition: transform 0.15s ease;
 }
 
+.branch-marker.dimmed {
+  opacity: 0.22;
+}
+
 .branch-marker:hover,
 .branch-marker.active {
   transform: translateY(-1px);
@@ -841,6 +845,63 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-h);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sidebar-region-header::-webkit-details-marker,
+.sidebar-province-header::-webkit-details-marker,
+.sidebar-city-header::-webkit-details-marker {
+  display: none;
+}
+
+.sidebar-region-header::before,
+.sidebar-province-header::before,
+.sidebar-city-header::before {
+  content: "▸";
+  margin-right: 6px;
+  color: var(--text);
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.sidebar-island[open] > .sidebar-region-header::before,
+.sidebar-province[open] > .sidebar-province-header::before,
+.sidebar-city[open] > .sidebar-city-header::before {
+  transform: rotate(90deg);
+}
+
+.sidebar-focus-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-focus-btn:hover {
+  color: var(--eac-primary);
+}
+
+.sidebar-clear-focus {
+  width: calc(100% - 20px);
+  margin: 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 8px;
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--eac-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar-clear-focus:hover {
+  background: rgba(96, 165, 250, 0.18);
 }
 
 .sidebar-region-header span:last-child {
@@ -857,6 +918,28 @@
   padding: 0 8px 8px;
 }
 
+.sidebar-province {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.sidebar-province-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 7px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-h);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sidebar-province-header span:last-child {
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.75;
+}
+
 .sidebar-city {
   padding: 4px 0 6px;
 }
@@ -869,13 +952,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 8px 4px 34px;
+  padding: 5px 8px 4px 28px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--text);
   opacity: 0.72;
+  cursor: pointer;
+  list-style: none;
 }
 
 .sidebar-city-header span:last-child {

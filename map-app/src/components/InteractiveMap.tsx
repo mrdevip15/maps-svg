@@ -41,6 +41,10 @@ interface SvgPath {
 }
 
 type VB = { x: number; y: number; w: number; h: number };
+type FocusTarget =
+  | { type: "island"; label: string; regionCodes: string[] }
+  | { type: "province"; label: string; regionCodes: string[] }
+  | { type: "city"; label: string; regionCodes: string[]; city: string };
 
 interface RefPoint {
   label: string;
@@ -60,6 +64,16 @@ const ZOOM_PRESETS = { x1: 1, x5: 5, x10: 10 } as const;
 type ZoomPreset = keyof typeof ZOOM_PRESETS;
 
 const targetIndices = new Set(Object.keys(pathToProvince).map(Number));
+
+const ISLANDS = [
+  { name: "Sulawesi", regionCodes: ["IDSN", "IDST", "IDSG", "IDSA", "IDSR", "IDGO"] },
+  { name: "Maluku", regionCodes: ["IDMU", "IDMA"] },
+  { name: "Papua", regionCodes: ["IDPB", "IDPA"] },
+] as const;
+
+function getIslandForRegionCode(regionCode: string) {
+  return ISLANDS.find((island) => (island.regionCodes as readonly string[]).includes(regionCode))?.name ?? "Lainnya";
+}
 
 function parseSvgPaths(svgText: string): SvgPath[] {
   const regex = /<path[^>]*>/g;
@@ -83,16 +97,28 @@ function parseSvgPaths(svgText: string): SvgPath[] {
   return results;
 }
 
-function groupBranchesByProvinceCity(branches: EacBranch[]) {
+function groupBranchesByIslandProvinceCity(branches: EacBranch[]) {
   return branches.reduce<
     Array<{
-      region: string;
-      regionCode: string;
+      island: string;
       total: number;
-      cities: Array<{ city: string; branches: EacBranch[] }>;
+      provinces: Array<{
+        region: string;
+        regionCode: string;
+        total: number;
+        cities: Array<{ city: string; branches: EacBranch[] }>;
+      }>;
     }>
   >((groups, branch) => {
-    let provinceGroup = groups.find((item) => item.regionCode === branch.regionCode);
+    const island = getIslandForRegionCode(branch.regionCode);
+    let islandGroup = groups.find((item) => item.island === island);
+
+    if (!islandGroup) {
+      islandGroup = { island, total: 0, provinces: [] };
+      groups.push(islandGroup);
+    }
+
+    let provinceGroup = islandGroup.provinces.find((item) => item.regionCode === branch.regionCode);
 
     if (!provinceGroup) {
       provinceGroup = {
@@ -101,7 +127,7 @@ function groupBranchesByProvinceCity(branches: EacBranch[]) {
         total: 0,
         cities: [],
       };
-      groups.push(provinceGroup);
+      islandGroup.provinces.push(provinceGroup);
     }
 
     let cityGroup = provinceGroup.cities.find((item) => item.city === branch.city);
@@ -112,6 +138,7 @@ function groupBranchesByProvinceCity(branches: EacBranch[]) {
 
     cityGroup.branches.push(branch);
     provinceGroup.total += 1;
+    islandGroup.total += 1;
     return groups;
   }, []);
 }
@@ -120,6 +147,7 @@ export default function InteractiveMap() {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [activeRegionIdx, setActiveRegionIdx] = useState<number | null>(null);
+  const [activeFocus, setActiveFocus] = useState<FocusTarget | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<number | null>(null);
   const [svgRaw, setSvgRaw] = useState<string | null>(null);
   const [vb, setVb] = useState<VB>(DEFAULT_VB);
@@ -180,6 +208,7 @@ export default function InteractiveMap() {
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+  const pathRefs = useRef<Record<number, SVGPathElement | null>>({});
   const googleMapElRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<any>(null);
   const googleMarkersRef = useRef<any[]>([]);
@@ -195,6 +224,52 @@ export default function InteractiveMap() {
       y: y - prev.h / 2,
     }));
   }, []);
+
+  const focusSvgBounds = useCallback((bounds: { x: number; y: number; width: number; height: number }) => {
+    const aspect = DEFAULT_VB.w / DEFAULT_VB.h;
+    const padding = Math.max(8, Math.max(bounds.width, bounds.height) * 0.14);
+    const paddedW = bounds.width + padding * 2;
+    const paddedH = bounds.height + padding * 2;
+    const nextW = Math.min(MAX_W, Math.max(MIN_W, Math.max(paddedW, paddedH * aspect)));
+    const nextH = nextW / aspect;
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+
+    setVb({
+      x: cx - nextW / 2,
+      y: cy - nextH / 2,
+      w: nextW,
+      h: nextH,
+    });
+  }, []);
+
+  const focusRegionCodes = useCallback((regionCodes: string[]) => {
+    const boxes = Object.entries(pathRefs.current)
+      .filter(([index, el]) => el && regionCodes.includes(pathToProvince[Number(index)]))
+      .map(([, el]) => el!.getBBox());
+
+    if (boxes.length === 0) return;
+    const minX = Math.min(...boxes.map((box) => box.x));
+    const minY = Math.min(...boxes.map((box) => box.y));
+    const maxX = Math.max(...boxes.map((box) => box.x + box.width));
+    const maxY = Math.max(...boxes.map((box) => box.y + box.height));
+    focusSvgBounds({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
+  }, [focusSvgBounds]);
+
+  const focusBranches = useCallback((branches: EacBranch[]) => {
+    const points = branches.map((branch) => projectToSvg(branch.lat, branch.lng));
+    if (points.length === 0) return;
+    const minX = Math.min(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const maxY = Math.max(...points.map((point) => point.y));
+    focusSvgBounds({
+      x: minX,
+      y: minY,
+      width: Math.max(4, maxX - minX),
+      height: Math.max(4, maxY - minY),
+    });
+  }, [focusSvgBounds]);
 
   // --- Bulk calibration hooks ---
   const goToRef = useCallback(
@@ -227,7 +302,7 @@ export default function InteractiveMap() {
   }
 
   const paths = useMemo(() => (svgRaw ? parseSvgPaths(svgRaw) : []), [svgRaw]);
-  const branchGroups = useMemo(() => groupBranchesByProvinceCity(eacBranches), []);
+  const branchGroups = useMemo(() => groupBranchesByIslandProvinceCity(eacBranches), []);
   const branchesByRegion = useMemo(
     () =>
       eacBranches.reduce<Record<string, EacBranch[]>>((result, branch) => {
@@ -279,13 +354,17 @@ export default function InteractiveMap() {
       return {
         ...item,
         nearestPx,
+        dimmed:
+          activeFocus !== null &&
+          !activeFocus.regionCodes.includes(item.branch.regionCode) ||
+          (activeFocus?.type === "city" && item.branch.city !== activeFocus.city),
         compact: close,
         radius: veryClose ? 1.6 : close ? 2.3 : item.branch.highlighted ? 6 : 4,
         strokeWidth: close ? 0.8 : item.branch.highlighted ? 2 : 1.5,
         showAdornment: !close,
       };
     });
-  }, [svgSize.height, svgSize.width, vb.h, vb.w]);
+  }, [activeFocus, svgSize.height, svgSize.width, vb.h, vb.w]);
 
   // Zoom centered on mouse position
   const zoomAt = useCallback((screenX: number, screenY: number, factor: number) => {
@@ -369,6 +448,7 @@ export default function InteractiveMap() {
   const resetZoom = useCallback(() => {
     setVb(DEFAULT_VB);
     setActiveRegionIdx(null);
+    setActiveFocus(null);
   }, []);
 
   // Debug coordinate picker — uses SVG's own CTM for absolute coordinates (pan/zoom independent)
@@ -428,25 +508,16 @@ export default function InteractiveMap() {
       if (!targetIndices.has(idx)) return;
 
       e.stopPropagation();
+      const regionCode = pathToProvince[idx];
       const bbox = e.currentTarget.getBBox();
-      const aspect = DEFAULT_VB.w / DEFAULT_VB.h;
-      const padding = Math.max(8, Math.max(bbox.width, bbox.height) * 0.12);
-      const paddedW = bbox.width + padding * 2;
-      const paddedH = bbox.height + padding * 2;
-      const nextW = Math.min(MAX_W, Math.max(MIN_W, Math.max(paddedW, paddedH * aspect)));
-      const nextH = nextW / aspect;
-      const cx = bbox.x + bbox.width / 2;
-      const cy = bbox.y + bbox.height / 2;
-
-      setVb({
-        x: cx - nextW / 2,
-        y: cy - nextH / 2,
-        w: nextW,
-        h: nextH,
-      });
+      focusSvgBounds(bbox);
       setActiveRegionIdx(idx);
+      if (regionCode) {
+        const provinceName = eacBranches.find((branch) => branch.regionCode === regionCode)?.region ?? regionCode;
+        setActiveFocus({ type: "province", label: provinceName, regionCodes: [regionCode] });
+      }
     },
-    [calibrationMode]
+    [calibrationMode, focusSvgBounds]
   );
 
   const handleMarkerEnter = useCallback((branch: EacBranch, e: MouseEvent) => {
@@ -576,9 +647,11 @@ export default function InteractiveMap() {
             const isTarget = targetIndices.has(index);
             const isHovered = index === hoveredIdx;
             const isActiveRegion = index === activeRegionIdx;
-            const hasActiveRegion = activeRegionIdx !== null;
-            const provinceOpacity = hasActiveRegion
-              ? isActiveRegion
+            const provinceCode = pathToProvince[index];
+            const isFocusedProvince = Boolean(provinceCode && activeFocus?.regionCodes.includes(provinceCode));
+            const hasActiveFocus = activeFocus !== null;
+            const provinceOpacity = hasActiveFocus
+              ? isFocusedProvince
                 ? 1
                 : isHovered
                   ? 0.72
@@ -594,17 +667,18 @@ export default function InteractiveMap() {
             return (
               <path
                 key={index}
+                ref={(el) => { pathRefs.current[index] = el; }}
                 d={d}
                 fill={fill}
                 stroke="#ffffff"
                 strokeWidth={2}
                 vectorEffect="non-scaling-stroke"
-                className={isHovered || isActiveRegion ? "province-active" : undefined}
+                className={isHovered || isActiveRegion || isFocusedProvince ? "province-active" : undefined}
                 style={{
                   cursor: "grab",
                   opacity: provinceOpacity,
                   transition: "opacity 0.2s ease, filter 0.2s ease",
-                  filter: isActiveRegion ? "drop-shadow(0 0 5px rgba(255,255,255,0.45))" : undefined,
+                  filter: isFocusedProvince ? "drop-shadow(0 0 5px rgba(255,255,255,0.45))" : undefined,
                 }}
                 onMouseEnter={isTarget ? (e) => handleProvinceEnter(index, e) : undefined}
                 onMouseLeave={isTarget ? handleProvinceLeave : undefined}
@@ -614,13 +688,13 @@ export default function InteractiveMap() {
           })}
 
           {/* Projected branch markers — adaptive size based on current SVG zoom */}
-          {projectedBranches.map(({ branch, x: bx, y: by, radius, strokeWidth, showAdornment, compact }) => {
+          {projectedBranches.map(({ branch, x: bx, y: by, radius, strokeWidth, showAdornment, compact, dimmed }) => {
             const isBranchActive = branch.id === activeBranchId;
 
             return (
               <g
                 key={branch.id}
-                className={`branch-marker${compact ? " compact" : ""}${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
+                className={`branch-marker${compact ? " compact" : ""}${dimmed ? " dimmed" : ""}${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
                   isBranchActive ? " active" : ""
                 }`}
                 onMouseEnter={(e) => handleMarkerEnter(branch, e)}
@@ -825,44 +899,99 @@ export default function InteractiveMap() {
 
         <div className="sidebar-hint">Scroll untuk zoom, drag untuk geser. Klik peta untuk koordinat SVG.</div>
 
-        {branchGroups.map((group) => (
-          <section className="sidebar-region" key={group.regionCode}>
-            <div className="sidebar-region-header">
-              <span>{group.region}</span>
-              <span>{group.total}</span>
-            </div>
+        {activeFocus && (
+          <button type="button" className="sidebar-clear-focus" onClick={resetZoom}>
+            Clear focus: {activeFocus.label}
+          </button>
+        )}
+
+        {branchGroups.map((islandGroup) => (
+          <details className="sidebar-region sidebar-island" key={islandGroup.island} open>
+            <summary className="sidebar-region-header">
+              <button
+                type="button"
+                className="sidebar-focus-btn"
+                onClick={(e) => {
+                  e.preventDefault();
+                  const island = ISLANDS.find((item) => item.name === islandGroup.island);
+                  const regionCodes = island ? [...island.regionCodes] : islandGroup.provinces.map((province) => province.regionCode);
+                  setActiveFocus({ type: "island", label: islandGroup.island, regionCodes });
+                  setActiveRegionIdx(null);
+                  focusRegionCodes(regionCodes);
+                }}
+              >
+                {islandGroup.island}
+              </button>
+              <span>{islandGroup.total}</span>
+            </summary>
 
             <div className="sidebar-region-list">
-              {group.cities.map((cityGroup) => (
-                <div className="sidebar-city" key={`${group.regionCode}-${cityGroup.city}`}>
-                  <div className="sidebar-city-header">
-                    <span>{cityGroup.city}</span>
-                    <span>{cityGroup.branches.length}</span>
-                  </div>
-
-                  {cityGroup.branches.map((branch) => (
+              {islandGroup.provinces.map((provinceGroup) => (
+                <details className="sidebar-province" key={provinceGroup.regionCode} open>
+                  <summary className="sidebar-province-header">
                     <button
                       type="button"
-                      key={branch.id}
-                      className={`sidebar-branch${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
-                        activeBranchId === branch.id ? " active" : ""
-                      }`}
-                      onMouseEnter={() => setActiveBranchId(branch.id)}
-                      onMouseLeave={() => setActiveBranchId(null)}
-                      onFocus={() => setActiveBranchId(branch.id)}
-                      onBlur={() => setActiveBranchId(null)}
+                      className="sidebar-focus-btn"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setActiveFocus({ type: "province", label: provinceGroup.region, regionCodes: [provinceGroup.regionCode] });
+                        setActiveRegionIdx(null);
+                        focusRegionCodes([provinceGroup.regionCode]);
+                      }}
                     >
-                      <span className="branch-number">{branch.id}</span>
-                      <span className="branch-text">
-                        <span className="branch-name">{branch.name}{branch.special ? " ✦" : ""}</span>
-                        <span className="branch-area">{branch.area}</span>
-                      </span>
+                      {provinceGroup.region}
                     </button>
+                    <span>{provinceGroup.total}</span>
+                  </summary>
+
+                  {provinceGroup.cities.map((cityGroup) => (
+                    <details className="sidebar-city" key={`${provinceGroup.regionCode}-${cityGroup.city}`}>
+                      <summary className="sidebar-city-header">
+                        <button
+                          type="button"
+                          className="sidebar-focus-btn"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setActiveFocus({
+                              type: "city",
+                              label: cityGroup.city,
+                              regionCodes: [provinceGroup.regionCode],
+                              city: cityGroup.city,
+                            });
+                            setActiveRegionIdx(null);
+                            focusBranches(cityGroup.branches);
+                          }}
+                        >
+                          {cityGroup.city}
+                        </button>
+                        <span>{cityGroup.branches.length}</span>
+                      </summary>
+
+                      {cityGroup.branches.map((branch) => (
+                        <button
+                          type="button"
+                          key={branch.id}
+                          className={`sidebar-branch${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
+                            activeBranchId === branch.id ? " active" : ""
+                          }`}
+                          onMouseEnter={() => setActiveBranchId(branch.id)}
+                          onMouseLeave={() => setActiveBranchId(null)}
+                          onFocus={() => setActiveBranchId(branch.id)}
+                          onBlur={() => setActiveBranchId(null)}
+                        >
+                          <span className="branch-number">{branch.id}</span>
+                          <span className="branch-text">
+                            <span className="branch-name">{branch.name}{branch.special ? " ✦" : ""}</span>
+                            <span className="branch-area">{branch.area}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </details>
                   ))}
-                </div>
+                </details>
               ))}
             </div>
-          </section>
+          </details>
         ))}
       </aside>
     </div>
