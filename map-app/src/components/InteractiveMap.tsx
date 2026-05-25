@@ -3,6 +3,30 @@ import { eacBranches, type EacBranch } from "../data/eacBranches";
 import { pathToProvince } from "../data/provinceMap";
 import { projectToSvg } from "../data/projection";
 
+declare global {
+  interface Window {
+    google?: any;
+    __googleMapsPromise?: Promise<void>;
+  }
+}
+
+function loadGoogleMaps(apiKey: string) {
+  if (window.google?.maps) return Promise.resolve();
+  if (window.__googleMapsPromise) return window.__googleMapsPromise;
+
+  window.__googleMapsPromise = new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Google Maps"));
+    document.head.appendChild(script);
+  });
+
+  return window.__googleMapsPromise;
+}
+
 interface TooltipData {
   title: string;
   lines: string[];
@@ -17,6 +41,14 @@ interface SvgPath {
 }
 
 type VB = { x: number; y: number; w: number; h: number };
+
+interface RefPoint {
+  label: string;
+  lat: number;
+  lng: number;
+  svgX: number | null;
+  svgY: number | null;
+}
 
 const DEFAULT_VB: VB = { x: 500, y: 10, w: 470, h: 320 };
 const MIN_W = 40;
@@ -83,34 +115,85 @@ export default function InteractiveMap() {
   const [svgOpacity, setSvgOpacity] = useState(0.85);
   const [svgLocked, setSvgLocked] = useState(false);
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>("x1");
-  const [coordInput, setCoordInput] = useState("");
-  const [mapsSync, setMapsSync] = useState(true);
-  const [gmZoom, setGmZoom] = useState(5);
-  const [markerLat, setMarkerLat] = useState<number | null>(null);
-  const [markerLng, setMarkerLng] = useState<number | null>(null);
+  const [gmZoom, setGmZoom] = useState(() => {
+    const saved = localStorage.getItem("gmZoom");
+    return saved ? parseInt(saved, 10) : 5;
+  });
+  const [gmCenter, setGmCenter] = useState(() => {
+    const saved = localStorage.getItem("gmCenter");
+    if (!saved) return { lat: -2.5, lng: 121 };
+    try {
+      const parsed = JSON.parse(saved) as { lat: number; lng: number };
+      return Number.isFinite(parsed.lat) && Number.isFinite(parsed.lng) ? parsed : { lat: -2.5, lng: 121 };
+    } catch {
+      return { lat: -2.5, lng: 121 };
+    }
+  });
+  const [gmReady, setGmReady] = useState(false);
+
+  // Persist gmZoom to localStorage
+  useEffect(() => {
+    localStorage.setItem("gmZoom", String(gmZoom));
+  }, [gmZoom]);
+
+  useEffect(() => {
+    localStorage.setItem("gmCenter", JSON.stringify(gmCenter));
+  }, [gmCenter]);
+  const [bulkInput, setBulkInput] = useState("");
+
+  const handleBulkInput = useCallback((text: string) => {
+    setBulkInput(text);
+    const lines = text.trim().split("\n").filter((l) => l.trim());
+    const parsed: RefPoint[] = lines.map((line, i) => {
+      const segments = line.split(",").map((s) => s.trim());
+      const labelPart = segments[0];
+      const numParts = segments.slice(1).map((s) => parseFloat(s));
+      const hasLabel = isNaN(parseFloat(labelPart));
+      return {
+        label: hasLabel ? labelPart : `Point ${i + 1}`,
+        lat: hasLabel ? (isNaN(numParts[0]) ? 0 : numParts[0]) : (isNaN(parseFloat(labelPart)) ? 0 : parseFloat(labelPart)),
+        lng: hasLabel ? (isNaN(numParts[1]) ? 0 : numParts[1]) : (isNaN(numParts[0]) ? 0 : parseFloat(labelPart)),
+        svgX: null,
+        svgY: null,
+      };
+    });
+    setRefPoints(parsed);
+    setActiveRefIdx(0);
+  }, []);
+  const [refPoints, setRefPoints] = useState<RefPoint[]>([]);
+  const [activeRefIdx, setActiveRefIdx] = useState(0);
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+  const googleMapElRef = useRef<HTMLDivElement>(null);
+  const googleMapRef = useRef<any>(null);
+  const googleMarkersRef = useRef<any[]>([]);
 
-  const gmZoomIn = useCallback(() => {
-    setGmZoom((z) => {
-      const nz = Math.min(18, z + 1);
-      if (markerLat !== null && markerLng !== null) {
-        setDebouncedUrl(`https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${nz}&output=embed`);
-      }
-      return nz;
-    });
-  }, [markerLat, markerLng]);
+  const gmZoomIn = useCallback(() => setGmZoom((z) => Math.min(18, z + 1)), []);
+  const gmZoomOut = useCallback(() => setGmZoom((z) => Math.max(1, z - 1)), []);
 
-  const gmZoomOut = useCallback(() => {
-    setGmZoom((z) => {
-      const nz = Math.max(1, z - 1);
-      if (markerLat !== null && markerLng !== null) {
-        setDebouncedUrl(`https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${nz}&output=embed`);
-      }
-      return nz;
-    });
-  }, [markerLat, markerLng]);
+  // --- Bulk calibration hooks ---
+  const goToRef = useCallback(
+    (idx: number) => {
+      if (idx >= 0 && idx < refPoints.length) setActiveRefIdx(idx);
+    },
+    [refPoints.length]
+  );
+
+  const referenceOutput = useMemo(
+    () =>
+      refPoints
+        .map(
+          (rp) =>
+            `${rp.label}, ${rp.lat}, ${rp.lng}, ${rp.svgX !== null ? rp.svgX.toFixed(1) : "?"}, ${rp.svgY !== null ? rp.svgY.toFixed(1) : "?"}`
+        )
+        .join("\n"),
+    [refPoints]
+  );
+
+  const copyReference = useCallback(() => {
+    navigator.clipboard.writeText(referenceOutput);
+  }, [referenceOutput]);
 
   if (typeof window !== "undefined" && !svgRaw) {
     fetch("/all_region.svg")
@@ -211,17 +294,28 @@ export default function InteractiveMap() {
 
   const resetZoom = useCallback(() => setVb(DEFAULT_VB), []);
 
-  // Debug coordinate picker
+  // Debug coordinate picker — uses SVG's own CTM for absolute coordinates (pan/zoom independent)
   const handleDebugClick = useCallback(
     (e: MouseEvent<SVGSVGElement>) => {
       const svg = svgRef.current;
       if (!svg) return;
-      const rect = svg.getBoundingClientRect();
-      const sx = (e.clientX - rect.left) / rect.width;
-      const sy = (e.clientY - rect.top) / rect.height;
-      setDebugPoint({ x: vb.x + sx * vb.w, y: vb.y + sy * vb.h });
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const point = new DOMPoint(e.clientX, e.clientY);
+      const svgPoint = point.matrixTransform(ctm.inverse());
+      const svgX = svgPoint.x;
+      const svgY = svgPoint.y;
+      setDebugPoint({ x: svgX, y: svgY });
+
+      if (calibrationMode && refPoints[activeRefIdx]) {
+        setRefPoints((prev) =>
+          prev.map((rp, i) =>
+            i === activeRefIdx ? { ...rp, svgX, svgY } : rp
+          )
+        );
+      }
     },
-    [vb]
+    [calibrationMode, activeRefIdx, refPoints]
   );
 
   const moveTooltip = useCallback((e: MouseEvent) => {
@@ -268,54 +362,84 @@ export default function InteractiveMap() {
 
   const viewBoxStr = `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
 
-  // Default: protobuf embed, no pin, centered on eastern Indonesia
-  const mapsUrlDefault = `https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d6367616.0!2d117.5!3d-2.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sid!4v1`;
+  // Google Maps JS API: one map instance, no iframe reload between pins.
+  useEffect(() => {
+    if (!calibrationMode || !googleMapElRef.current || googleMapRef.current) return;
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const mapsUrlWithMarker = (markerLat !== null && markerLng !== null)
-    ? `https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${gmZoom}&output=embed`
-    : null;
+    const apiKey = import.meta.env.VITE_GMAPS_KEY;
+    if (!apiKey) return;
 
-  // Iframe URL: debounce zoom changes, immediate for marker changes
-  const [debouncedUrl, setDebouncedUrl] = useState(mapsUrlDefault);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+    let cancelled = false;
+    loadGoogleMaps(apiKey)
+      .then(() => {
+        if (cancelled || !googleMapElRef.current || googleMapRef.current) return;
+
+        const map = new window.google.maps.Map(googleMapElRef.current, {
+          center: gmCenter,
+          zoom: gmZoom,
+          mapTypeId: "roadmap",
+          gestureHandling: "greedy",
+          streetViewControl: false,
+          fullscreenControl: true,
+          mapTypeControl: false,
+        });
+
+        map.addListener("zoom_changed", () => {
+          const nextZoom = map.getZoom();
+          if (typeof nextZoom === "number") setGmZoom(nextZoom);
+        });
+
+        map.addListener("idle", () => {
+          const center = map.getCenter();
+          if (center) setGmCenter({ lat: center.lat(), lng: center.lng() });
+        });
+
+        googleMapRef.current = map;
+        setGmReady(true);
+      })
+      .catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calibrationMode, gmCenter, gmZoom]);
 
   useEffect(() => {
-    if (!calibrationMode) return;
+    if (!gmReady || !googleMapRef.current) return;
+    const currentZoom = googleMapRef.current.getZoom();
+    if (currentZoom !== gmZoom) googleMapRef.current.setZoom(gmZoom);
+  }, [gmReady, gmZoom]);
 
-    const targetUrl = mapsUrlWithMarker ?? mapsUrlDefault;
+  useEffect(() => {
+    if (!gmReady || !googleMapRef.current || !window.google?.maps) return;
 
-    if (mapsSync) {
-      clearTimeout(debounceTimer.current);
-      debounceTimer.current = setTimeout(() => {
-        setDebouncedUrl(targetUrl);
-      }, 300);
-      return () => clearTimeout(debounceTimer.current);
-    }
+    googleMarkersRef.current.forEach((marker) => marker.setMap(null));
+    googleMarkersRef.current = refPoints.map((rp, i) =>
+      new window.google.maps.Marker({
+        map: googleMapRef.current,
+        position: { lat: rp.lat, lng: rp.lng },
+        label: `${i + 1}`,
+        title: rp.label,
+      })
+    );
+  }, [gmReady, refPoints]);
 
-    setDebouncedUrl(targetUrl);
-  }, [gmZoom, markerLat, markerLng, calibrationMode, mapsSync, mapsUrlWithMarker, mapsUrlDefault]);
+  useEffect(() => {
+    if (!gmReady || !googleMapRef.current) return;
+    const rp = refPoints[activeRefIdx];
+    if (!rp) return;
+    googleMapRef.current.panTo({ lat: rp.lat, lng: rp.lng });
 
-  const handleCoordInput = useCallback(() => {
-    const parts = coordInput.split(",").map((s) => parseFloat(s.trim()));
-    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-      setMarkerLat(parts[0]);
-      setMarkerLng(parts[1]);
-      setDebouncedUrl(
-        `https://maps.google.com/maps?q=${parts[0]},${parts[1]}&z=${gmZoom}&output=embed`
-      );
-    } else {
-      setMarkerLat(null);
-      setMarkerLng(null);
-    }
-  }, [coordInput, gmZoom]);
+    googleMarkersRef.current.forEach((marker, i) => {
+      marker.setAnimation(i === activeRefIdx ? window.google.maps.Animation.BOUNCE : null);
+      marker.setZIndex(i === activeRefIdx ? 999 : undefined);
+    });
+  }, [gmReady, refPoints, activeRefIdx]);
 
-  const clearMarker = useCallback(() => {
-    setMarkerLat(null);
-    setMarkerLng(null);
-    setCoordInput("");
-    setDebouncedUrl(mapsUrlDefault);
-  }, [mapsUrlDefault]);
+  const copyDebugCoord = useCallback(() => {
+    if (!debugPoint) return;
+    navigator.clipboard.writeText(`${debugPoint.x.toFixed(1)}, ${debugPoint.y.toFixed(1)}`);
+  }, [debugPoint]);
 
   return (
     <div className="map-layout">
@@ -323,17 +447,7 @@ export default function InteractiveMap() {
         {/* Google Maps background for calibration */}
         {calibrationMode && (
           <div className="calibration-bg">
-            <iframe
-              ref={iframeRef}
-              src={debouncedUrl}
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              title="Google Maps Satellite"
-            />
+            <div ref={googleMapElRef} className="google-map-js" />
           </div>
         )}
 
@@ -453,28 +567,51 @@ export default function InteractiveMap() {
         {/* Calibration controls */}
         {calibrationMode && (
           <div className="calibration-panel">
+            <div className="calibration-title">🎯 Calibration Mode</div>
+
+            <label className="calibration-label">
+              Paste titik referensi (label, lat, lng):
+            </label>
+            <textarea
+              className="bulk-textarea"
+              placeholder={"Makassar Losari, -5.1441, 119.4061\nManado, 1.4870, 124.8252\n..."}
+              value={bulkInput}
+              onChange={(e) => handleBulkInput(e.target.value)}
+              rows={6}
+            />
+
+            {refPoints.length > 0 && (
+              <div className="calibration-nav">
+                <span className="cal-step">
+                  Titik <strong>{activeRefIdx + 1}</strong>/{refPoints.length}: <strong>{refPoints[activeRefIdx].label}</strong>
+                </span>
+                <div className="cal-nav-btns">
+                  <button type="button" className="cal-nav-btn" disabled={activeRefIdx === 0} onClick={() => goToRef(activeRefIdx - 1)}>← Prev</button>
+                  <button type="button" className="cal-nav-btn" disabled={activeRefIdx === refPoints.length - 1} onClick={() => goToRef(activeRefIdx + 1)}>Next →</button>
+                </div>
+                <span className="cal-target">
+                  📍 {refPoints[activeRefIdx].lat}, {refPoints[activeRefIdx].lng}
+                </span>
+                <div className="cal-status">
+                  {refPoints[activeRefIdx].svgX !== null ? (
+                    <span className="cal-done">✅ Recorded: ({refPoints[activeRefIdx].svgX!.toFixed(1)}, {refPoints[activeRefIdx].svgY!.toFixed(1)})</span>
+                  ) : (
+                    <span className="cal-pending">⏳ Klik posisi ini di SVG</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <label className="calibration-label">
               SVG Opacity: <strong>{Math.round(svgOpacity * 100)}%</strong>
             </label>
             <input
               type="range"
-              min={0}
-              max={1}
-              step={0.05}
+              min={0} max={1} step={0.05}
               value={svgOpacity}
               onChange={(e) => setSvgOpacity(parseFloat(e.target.value))}
               className="calibration-slider"
             />
-
-            <div className="calibration-row">
-              <button
-                type="button"
-                className={`sync-toggle${mapsSync ? " active" : ""}`}
-                onClick={() => setMapsSync((v) => !v)}
-              >
-                {mapsSync ? "🔗 Sync ON" : "⛓️ Sync OFF"}
-              </button>
-            </div>
 
             <div className="gm-zoom-row">
               <span className="gm-zoom-label">Maps zoom:</span>
@@ -483,30 +620,37 @@ export default function InteractiveMap() {
               <button type="button" className="gm-zoom-btn" onClick={gmZoomIn}>+</button>
             </div>
 
-            <div className="coord-input-group">
-              <span className="coord-input-label">📍</span>
-              <input
-                type="text"
-                placeholder="-5.198544, 119.446975"
-                value={coordInput}
-                onChange={(e) => setCoordInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCoordInput()}
-                className="coord-input"
-              />
-              {markerLat !== null && (
-                <button type="button" className="coord-clear-btn" onClick={clearMarker}>×</button>
-              )}
-            </div>
-
             <button
               type="button"
               className={`lock-toggle${svgLocked ? " locked" : ""}`}
               onClick={() => setSvgLocked((v) => !v)}
             >
-              {svgLocked ? "🔓 Unlock SVG — interaksi Google Maps" : "🔒 Lock SVG — interaksi Google Maps"}
+              {svgLocked ? "🔓 Unlock SVG" : "🔒 Lock SVG — interaksi Google Maps"}
             </button>
+
+            {refPoints.length > 0 && (
+              <div className="cal-progress">
+                <div className="cal-progress-bar">
+                  {refPoints.map((rp, i) => (
+                    <div key={i} className={`cal-progress-seg${i === activeRefIdx ? " active" : ""}${rp.svgX !== null ? " done" : ""}`} />
+                  ))}
+                </div>
+                <span className="cal-progress-text">
+                  {refPoints.filter((rp) => rp.svgX !== null).length}/{refPoints.length} recorded
+                </span>
+              </div>
+            )}
+
+            {refPoints.length > 0 && refPoints.every((rp) => rp.svgX !== null) && (
+              <div className="cal-copy-section">
+                <div className="cal-copy-label">✅ Semua titik tercatat! Copy hasil:</div>
+                <pre className="cal-output">{referenceOutput}</pre>
+                <button type="button" className="cal-copy-btn" onClick={copyReference}>📋 Copy</button>
+              </div>
+            )}
+
             <p className="calibration-hint">
-              Sync ON → zoom SVG otomatis sync Google Maps. Lock SVG → pan/zoom Google Maps manual.
+              1. Paste titik → 2. Prev/Next → 3. Klik posisi di SVG → 4. Copy
             </p>
           </div>
         )}
@@ -521,7 +665,8 @@ export default function InteractiveMap() {
         {debugPoint && (
           <div className="debug-coords">
             <div className="debug-coords-title">📍 SVG Coords</div>
-            <code className="debug-coords-value">{debugPoint.x.toFixed(1)}, {debugPoint.y.toFixed(1)}</code>
+            <code className="debug-coords-value" onClick={copyDebugCoord} title="Klik untuk copy">{debugPoint.x.toFixed(1)}, {debugPoint.y.toFixed(1)}</code>
+            <button className="debug-coords-copy" onClick={copyDebugCoord} title="Copy">📋</button>
             <button className="debug-coords-close" onClick={() => setDebugPoint(null)}>×</button>
           </div>
         )}
