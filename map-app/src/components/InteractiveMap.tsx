@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef, useEffect, type MouseEvent } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect, type MouseEvent, type WheelEvent } from "react";
 import { eacBranches, type EacBranch } from "../data/eacBranches";
 import { pathToProvince } from "../data/provinceMap";
 import { projectToSvg } from "../data/projection";
@@ -16,15 +16,14 @@ interface SvgPath {
   index: number;
 }
 
-const DEFAULT_VB = { x: 500, y: 10, w: 470, h: 320 };
+type VB = { x: number; y: number; w: number; h: number };
+
+const DEFAULT_VB: VB = { x: 500, y: 10, w: 470, h: 320 };
+const ZOOM_FACTOR = 0.15;
+const MIN_W = 100;
+const MAX_W = 600;
 
 const targetIndices = new Set(Object.keys(pathToProvince).map(Number));
-
-// Province path indices grouped by region code for click-outside detection
-const provinceIndexByCode = new Map<string, number>();
-for (const [idx, code] of Object.entries(pathToProvince)) {
-  provinceIndexByCode.set(code, Number(idx));
-}
 
 function parseSvgPaths(svgText: string): SvgPath[] {
   const regex = /<path[^>]*>/g;
@@ -69,65 +68,16 @@ function groupBranchesByRegion(branches: EacBranch[]) {
   );
 }
 
-/** Extract all coordinate points from an SVG path `d` attribute. */
-function extractPathPoints(d: string): Array<[number, number]> {
-  const pts: Array<[number, number]> = [];
-  // Match all number sequences after path commands (M, L, C, Q, S, T, A, Z)
-  const re = /[\d.\-]+/g;
-  let m: RegExpExecArray | null;
-  const nums: number[] = [];
-  while ((m = re.exec(d)) !== null) {
-    nums.push(parseFloat(m[0]));
-  }
-  for (let i = 0; i < nums.length - 1; i += 2) {
-    pts.push([nums[i], nums[i + 1]]);
-  }
-  return pts;
-}
-
-/** Compute a viewBox centered on a province SVG path's bounding box. */
-function pathViewBox(d: string): { x: number; y: number; w: number; h: number } {
-  const pts = extractPathPoints(d);
-  if (pts.length === 0) return DEFAULT_VB;
-
-  const padding = 24;
-  const minX = Math.min(...pts.map((p) => p[0])) - padding;
-  const maxX = Math.max(...pts.map((p) => p[0])) + padding;
-  const minY = Math.min(...pts.map((p) => p[1])) - padding;
-  const maxY = Math.max(...pts.map((p) => p[1])) + padding;
-
-  // Maintain aspect ratio matching the default viewBox
-  const w = maxX - minX;
-  const h = maxY - minY;
-  const targetAspect = DEFAULT_VB.w / DEFAULT_VB.h;
-  let finalW = w;
-  let finalH = h;
-
-  if (w / h > targetAspect) {
-    finalH = w / targetAspect;
-  } else {
-    finalW = h * targetAspect;
-  }
-
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-
-  return {
-    x: cx - finalW / 2,
-    y: cy - finalH / 2,
-    w: finalW,
-    h: finalH,
-  };
-}
-
 export default function InteractiveMap() {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const [selectedRegionCode, setSelectedRegionCode] = useState<string | null>(null);
   const [activeBranchId, setActiveBranchId] = useState<number | null>(null);
   const [svgRaw, setSvgRaw] = useState<string | null>(null);
-  const [currentVB, setCurrentVB] = useState(DEFAULT_VB);
-  const animRef = useRef<number | null>(null);
+  const [vb, setVb] = useState<VB>(DEFAULT_VB);
+  const [debugPoint, setDebugPoint] = useState<{ x: number; y: number } | null>(null);
+  const isPanning = useRef(false);
+  const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
 
   if (typeof window !== "undefined" && !svgRaw) {
     fetch("/all_region.svg")
@@ -147,51 +97,79 @@ export default function InteractiveMap() {
     []
   );
 
-  // Pre-compute viewboxes per region from the province SVG path shape
-  const viewBoxByRegion = useMemo(() => {
-    const map: Record<string, { x: number; y: number; w: number; h: number }> = {};
-    for (const [code, pathIdx] of provinceIndexByCode) {
-      const p = paths[pathIdx];
-      if (p) map[code] = pathViewBox(p.d);
-    }
-    return map;
-  }, [paths]);
+  // Zoom centered on mouse position
+  const zoomAt = useCallback((screenX: number, screenY: number, factor: number) => {
+    setVb((prev) => {
+      const svg = svgRef.current;
+      if (!svg) return prev;
+      const rect = svg.getBoundingClientRect();
+      const rx = (screenX - rect.left) / rect.width;
+      const ry = (screenY - rect.top) / rect.height;
+      const pivotX = prev.x + rx * prev.w;
+      const pivotY = prev.y + ry * prev.h;
+      const newW = Math.min(MAX_W, Math.max(MIN_W, prev.w * (1 - factor)));
+      const scale = newW / prev.w;
+      const newH = prev.h * scale;
+      return {
+        x: pivotX - rx * newW,
+        y: pivotY - ry * newH,
+        w: newW,
+        h: newH,
+      };
+    });
+  }, []);
 
-  // Smoothly animate viewBox transition
+  const handleWheel = useCallback(
+    (e: WheelEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? ZOOM_FACTOR : -ZOOM_FACTOR;
+      zoomAt(e.clientX, e.clientY, delta);
+    },
+    [zoomAt]
+  );
+
+  // Pan
+  const handleMouseDown = useCallback((e: MouseEvent<SVGSVGElement>) => {
+    isPanning.current = true;
+    panStart.current = { mx: e.clientX, my: e.clientY, vbX: vb.x, vbY: vb.y };
+  }, [vb.x, vb.y]);
+
   useEffect(() => {
-    const target = selectedRegionCode ? viewBoxByRegion[selectedRegionCode] : DEFAULT_VB;
-
-    const animate = () => {
-      setCurrentVB((prev) => {
-        const dx = target.x - prev.x;
-        const dy = target.y - prev.y;
-        const dw = target.w - prev.w;
-        const dh = target.h - prev.h;
-
-        if (Math.abs(dx) < 0.3 && Math.abs(dy) < 0.3 && Math.abs(dw) < 0.3 && Math.abs(dh) < 0.3) {
-          return target;
-        }
-
-        return {
-          x: prev.x + dx * 0.12,
-          y: prev.y + dy * 0.12,
-          w: prev.w + dw * 0.12,
-          h: prev.h + dh * 0.12,
-        };
-      });
-
-      animRef.current = requestAnimationFrame(animate);
+    const handleMove = (e: globalThis.MouseEvent) => {
+      if (!isPanning.current) return;
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const dxSvg = ((e.clientX - panStart.current.mx) / rect.width) * vb.w;
+      const dySvg = ((e.clientY - panStart.current.my) / rect.height) * vb.h;
+      setVb((prev) => ({
+        ...prev,
+        x: panStart.current.vbX - dxSvg,
+        y: panStart.current.vbY - dySvg,
+      }));
     };
-
-    animRef.current = requestAnimationFrame(animate);
+    const handleUp = () => { isPanning.current = false; };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
     return () => {
-      if (animRef.current !== null) cancelAnimationFrame(animRef.current);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
     };
-  }, [selectedRegionCode, viewBoxByRegion]);
+  }, [vb.w, vb.h]);
 
-  const selectedBranches = useMemo(
-    () => (selectedRegionCode ? branchesByRegion[selectedRegionCode] ?? [] : []),
-    [selectedRegionCode, branchesByRegion]
+  const resetZoom = useCallback(() => setVb(DEFAULT_VB), []);
+
+  // Debug coordinate picker
+  const handleDebugClick = useCallback(
+    (e: MouseEvent<SVGSVGElement>) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const sx = (e.clientX - rect.left) / rect.width;
+      const sy = (e.clientY - rect.top) / rect.height;
+      setDebugPoint({ x: vb.x + sx * vb.w, y: vb.y + sy * vb.h });
+    },
+    [vb]
   );
 
   const moveTooltip = useCallback((e: MouseEvent) => {
@@ -221,22 +199,6 @@ export default function InteractiveMap() {
     setTooltip(null);
   }, []);
 
-  const handleProvinceClick = useCallback((idx: number) => {
-    const regionCode = pathToProvince[idx];
-    if (regionCode) {
-      setSelectedRegionCode((current) => (current === regionCode ? null : regionCode));
-    }
-  }, []);
-
-  // Click on SVG background (non-province) to deselect
-  const handleSvgBgClick = useCallback((e: MouseEvent<SVGSVGElement>) => {
-    // Only if clicking directly on the svg or a non-target path
-    const target = e.target as SVGElement;
-    if (target.tagName === "svg" || target.tagName === "rect") {
-      setSelectedRegionCode(null);
-    }
-  }, []);
-
   const handleMarkerEnter = useCallback((branch: EacBranch, e: MouseEvent) => {
     setActiveBranchId(branch.id);
     setTooltip({
@@ -252,27 +214,24 @@ export default function InteractiveMap() {
     setTooltip(null);
   }, []);
 
-  const toggleRegion = useCallback((regionCode: string) => {
-    setSelectedRegionCode((current) => (current === regionCode ? null : regionCode));
-  }, []);
-
-  const viewBoxStr = `${currentVB.x} ${currentVB.y} ${currentVB.w} ${currentVB.h}`;
+  const viewBoxStr = `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
 
   return (
     <div className="map-layout">
       <div className="map-container" onMouseMove={tooltip ? moveTooltip : undefined}>
         <svg
+          ref={svgRef}
           viewBox={viewBoxStr}
           preserveAspectRatio="xMidYMid meet"
           className="map-svg"
-          onClick={handleSvgBgClick}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onClick={handleDebugClick}
+          style={{ cursor: isPanning.current ? "grabbing" : "grab" }}
         >
           {paths.map(({ d, fill, index }) => {
-            const regionCode = pathToProvince[index];
             const isTarget = targetIndices.has(index);
-            const isSelected = selectedRegionCode !== null && regionCode === selectedRegionCode;
             const isHovered = index === hoveredIdx;
-            const isDimmed = selectedRegionCode !== null && regionCode !== selectedRegionCode;
 
             return (
               <path
@@ -280,28 +239,21 @@ export default function InteractiveMap() {
                 d={d}
                 fill={fill}
                 stroke="#ffffff"
-                strokeWidth={1.5}
-                className={isSelected || isHovered ? "province-active" : undefined}
+                strokeWidth={1}
+                className={isHovered ? "province-active" : undefined}
                 style={{
-                  cursor: isTarget ? "pointer" : "default",
-                  opacity: selectedRegionCode !== null
-                    ? isSelected ? 1 : isTarget ? 0.25 : 0.1
-                    : isTarget ? 1 : 0.2,
-                  filter: isDimmed ? "grayscale(0.3)" : undefined,
-                  transition: "opacity 0.3s ease, filter 0.3s ease",
+                  cursor: "grab",
+                  opacity: isHovered ? 1 : isTarget ? 1 : 0.2,
+                  transition: "opacity 0.15s ease",
                 }}
                 onMouseEnter={isTarget ? (e) => handleProvinceEnter(index, e) : undefined}
                 onMouseLeave={isTarget ? handleProvinceLeave : undefined}
-                onClick={isTarget ? (e) => {
-                  e.stopPropagation();
-                  handleProvinceClick(index);
-                } : undefined}
               />
             );
           })}
 
-          {/* Only show markers when a region is selected */}
-          {selectedBranches.map((branch, i) => {
+          {/* All markers always visible */}
+          {eacBranches.map((branch) => {
             const isBranchActive = branch.id === activeBranchId;
             const { x: bx, y: by } = projectToSvg(branch.lat, branch.lng);
 
@@ -311,7 +263,6 @@ export default function InteractiveMap() {
                 className={`branch-marker${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
                   isBranchActive ? " active" : ""
                 }`}
-                style={{ opacity: 1, animation: `marker-appear 0.3s ${i * 0.05}s ease both` }}
                 onMouseEnter={(e) => handleMarkerEnter(branch, e)}
                 onMouseLeave={handleMarkerLeave}
                 onClick={(e) => {
@@ -337,22 +288,27 @@ export default function InteractiveMap() {
           })}
         </svg>
 
-        {/* Back button when zoomed */}
-        {selectedRegionCode && (
-          <button
-            type="button"
-            className="zoom-back-btn"
-            onClick={() => setSelectedRegionCode(null)}
-          >
-            ← Kembali ke peta utama
-          </button>
-        )}
+        {/* Zoom controls */}
+        <div className="zoom-controls">
+          <button type="button" className="zoom-btn" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, -ZOOM_FACTOR)} title="Zoom In">+</button>
+          <button type="button" className="zoom-btn" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, ZOOM_FACTOR)} title="Zoom Out">−</button>
+          <button type="button" className="zoom-btn zoom-reset" onClick={resetZoom} title="Reset">⟲</button>
+        </div>
 
         <div className="legend" aria-label="Legenda marker cabang">
           <div className="legend-item"><span className="legend-dot regular" /> Cabang reguler</div>
           <div className="legend-item"><span className="legend-dot special" /> Cabang khusus ✦</div>
           <div className="legend-item"><span className="legend-dot highlighted" /> Fokus utama</div>
         </div>
+
+        {/* Debug coordinate picker */}
+        {debugPoint && (
+          <div className="debug-coords">
+            <div className="debug-coords-title">📍 SVG Coords</div>
+            <code className="debug-coords-value">{debugPoint.x.toFixed(1)}, {debugPoint.y.toFixed(1)}</code>
+            <button className="debug-coords-close" onClick={() => setDebugPoint(null)}>×</button>
+          </div>
+        )}
 
         {tooltip && (
           <div className="tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
@@ -370,23 +326,14 @@ export default function InteractiveMap() {
           <span>cabang EAC di Indonesia Timur</span>
         </div>
 
-        {!selectedRegionCode && (
-          <div className="sidebar-hint">Klik provinsi pada peta untuk melihat cabang</div>
-        )}
+        <div className="sidebar-hint">Scroll untuk zoom, drag untuk geser. Klik peta untuk koordinat SVG.</div>
 
         {branchGroups.map((group) => (
-          <section
-            className={`sidebar-region${selectedRegionCode === group.regionCode ? " expanded" : ""}`}
-            key={group.regionCode}
-          >
-            <button
-              type="button"
-              className={`sidebar-region-header${selectedRegionCode === group.regionCode ? " active" : ""}`}
-              onClick={() => toggleRegion(group.regionCode)}
-            >
+          <section className="sidebar-region" key={group.regionCode}>
+            <div className="sidebar-region-header">
               <span>{group.region}</span>
               <span>{group.branches.length}</span>
-            </button>
+            </div>
 
             <div className="sidebar-region-list">
               {group.branches.map((branch) => (
@@ -396,18 +343,10 @@ export default function InteractiveMap() {
                   className={`sidebar-branch${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
                     activeBranchId === branch.id ? " active" : ""
                   }`}
-                  onMouseEnter={() => {
-                    setActiveBranchId(branch.id);
-                    if (selectedRegionCode === branch.regionCode) return;
-                    setSelectedRegionCode(branch.regionCode);
-                  }}
+                  onMouseEnter={() => setActiveBranchId(branch.id)}
                   onMouseLeave={() => setActiveBranchId(null)}
                   onFocus={() => setActiveBranchId(branch.id)}
                   onBlur={() => setActiveBranchId(null)}
-                  onClick={() => {
-                    setSelectedRegionCode(branch.regionCode);
-                    setActiveBranchId(branch.id);
-                  }}
                 >
                   <span className="branch-number">{branch.id}</span>
                   <span className="branch-text">

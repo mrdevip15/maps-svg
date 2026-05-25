@@ -61,10 +61,6 @@
   display: block;
 }
 
-.map-svg path {
-  transition: opacity 0.2s ease, filter 0.2s ease;
-}
-
 /* ========== Branch Markers ========== */
 
 .branch-marker {
@@ -99,18 +95,10 @@
   stroke-width: 2;
 }
 
-.branch-marker.dimmed .marker-dot {
-  opacity: 0.3;
-}
-
 /* Star/diamond indicator for special branches */
 .marker-star {
   fill: var(--eac-special);
   opacity: 0.85;
-}
-
-.branch-marker.dimmed .marker-star {
-  opacity: 0.2;
 }
 
 /* Pulse animation for highlighted branches */
@@ -131,52 +119,104 @@
   }
 }
 
-@keyframes marker-appear {
-  0% {
-    opacity: 0;
-    transform: scale(0.3);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
+/* ========== Zoom Controls ========== */
 
-/* ========== Zoom Back Button ========== */
-
-.zoom-back-btn {
+.zoom-controls {
   position: absolute;
   top: 12px;
   left: 12px;
-  padding: 6px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+
+.zoom-btn {
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(6px);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 500;
   color: var(--text-h);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.15s ease, box-shadow 0.15s ease;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  z-index: 3;
   font-family: system-ui, sans-serif;
+  line-height: 1;
+  padding: 0;
 }
 
-.zoom-back-btn:hover {
+.zoom-btn:hover {
   background: rgba(255, 255, 255, 1);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.zoom-btn.zoom-reset {
+  font-size: 14px;
+}
+
 @media (prefers-color-scheme: dark) {
-  .zoom-back-btn {
+  .zoom-btn {
     background: rgba(22, 23, 29, 0.9);
     border-color: var(--border);
     color: var(--text-h);
   }
-  .zoom-back-btn:hover {
+  .zoom-btn:hover {
     background: rgba(30, 32, 40, 0.95);
   }
+}
+
+/* ========== Debug Coordinate Picker ========== */
+
+.debug-coords {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f0f9ff;
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  user-select: all;
+}
+
+.debug-coords-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.debug-coords-value {
+  background: rgba(255, 255, 255, 0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.debug-coords-close {
+  border: none;
+  background: none;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.debug-coords-close:hover {
+  color: #f8fafc;
 }
 
 /* ========== Legend ========== */
@@ -293,7 +333,6 @@
   color: var(--text);
 }
 
-/* Hint when no region selected */
 .sidebar-hint {
   padding: 12px 16px;
   font-size: 12px;
@@ -313,28 +352,13 @@
 }
 
 .sidebar-region-header {
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  border: none;
-  background: none;
-  cursor: pointer;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-h);
-  text-align: left;
-  transition: background 0.15s ease;
-}
-
-.sidebar-region-header:hover {
-  background: var(--eac-bg);
-}
-
-.sidebar-region-header.active {
-  background: var(--accent-bg);
-  color: var(--accent);
 }
 
 .sidebar-region-header span:last-child {
@@ -344,11 +368,6 @@
   background: var(--code-bg);
   padding: 1px 7px;
   border-radius: 10px;
-}
-
-.sidebar-region-header.active span:last-child {
-  background: var(--accent-bg);
-  color: var(--accent);
 }
 
 /* Branch list */
