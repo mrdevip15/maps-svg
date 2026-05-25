@@ -345,6 +345,7 @@ export default function InteractiveMap() {
 
     const pxPerSvgX = svgSize.width / vb.w;
     const pxPerSvgY = svgSize.height / vb.h;
+    const pxPerSvg = (pxPerSvgX + pxPerSvgY) / 2;
 
     return positioned.map((item, idx) => {
       let nearestPx = Number.POSITIVE_INFINITY;
@@ -356,8 +357,8 @@ export default function InteractiveMap() {
         nearestPx = Math.min(nearestPx, Math.hypot(dx, dy));
       });
 
-      const veryClose = nearestPx < 14;
       const close = nearestPx < 28;
+      const radiusPx = 7;
 
       return {
         ...item,
@@ -367,8 +368,9 @@ export default function InteractiveMap() {
           !activeFocus.regionCodes.includes(item.branch.regionCode) ||
           (activeFocus?.type === "city" && item.branch.city !== activeFocus.city),
         compact: close,
-        radius: veryClose ? 1.6 : close ? 2.3 : item.branch.highlighted ? 6 : 4,
-        strokeWidth: close ? 0.8 : item.branch.highlighted ? 2 : 1.5,
+        radius: radiusPx / pxPerSvg,
+        activeRadius: radiusPx / pxPerSvg,
+        strokeWidth: 2,
         showAdornment: !close,
       };
     });
@@ -717,7 +719,7 @@ export default function InteractiveMap() {
           })}
 
           {/* Projected branch markers — adaptive size based on current SVG zoom */}
-          {projectedBranches.map(({ branch, x: bx, y: by, radius, strokeWidth, showAdornment, compact, dimmed }) => {
+          {projectedBranches.map(({ branch, x: bx, y: by, radius, activeRadius, strokeWidth, showAdornment, compact, dimmed }) => {
             const isBranchActive = branch.id === activeBranchId;
 
             return (
@@ -733,18 +735,20 @@ export default function InteractiveMap() {
                   setActiveBranchId(branch.id);
                 }}
               >
-                {branch.highlighted && showAdornment && <circle className="marker-pulse" cx={bx} cy={by} r="8" />}
+                {branch.highlighted && showAdornment && <circle className="marker-pulse" cx={bx} cy={by} r={radius * 1.9} />}
                 <circle
                   cx={bx}
                   cy={by}
-                  r={isBranchActive ? Math.max(radius + 1.2, 3.4) : radius}
+                  r={isBranchActive ? activeRadius : radius}
                   strokeWidth={strokeWidth}
+                  vectorEffect="non-scaling-stroke"
                   className="marker-dot"
                 />
                 {branch.special && !branch.highlighted && showAdornment && (
                   <path
                     className="marker-star"
-                    d={`M ${bx} ${by - 8} L ${bx + 4} ${by - 4} L ${bx} ${by} L ${bx - 4} ${by - 4} Z`}
+                    vectorEffect="non-scaling-stroke"
+                    d={`M ${bx} ${by - radius * 2} L ${bx + radius} ${by - radius} L ${bx} ${by} L ${bx - radius} ${by - radius} Z`}
                   />
                 )}
               </g>
