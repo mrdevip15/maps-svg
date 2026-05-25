@@ -85,9 +85,32 @@ export default function InteractiveMap() {
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>("x1");
   const [coordInput, setCoordInput] = useState("");
   const [mapsSync, setMapsSync] = useState(true);
+  const [gmZoom, setGmZoom] = useState(5);
+  const [markerLat, setMarkerLat] = useState<number | null>(null);
+  const [markerLng, setMarkerLng] = useState<number | null>(null);
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
+
+  const gmZoomIn = useCallback(() => {
+    setGmZoom((z) => {
+      const nz = Math.min(18, z + 1);
+      if (markerLat !== null && markerLng !== null) {
+        setDebouncedUrl(`https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${nz}&output=embed`);
+      }
+      return nz;
+    });
+  }, [markerLat, markerLng]);
+
+  const gmZoomOut = useCallback(() => {
+    setGmZoom((z) => {
+      const nz = Math.max(1, z - 1);
+      if (markerLat !== null && markerLng !== null) {
+        setDebouncedUrl(`https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${nz}&output=embed`);
+      }
+      return nz;
+    });
+  }, [markerLat, markerLng]);
 
   if (typeof window !== "undefined" && !svgRaw) {
     fetch("/all_region.svg")
@@ -129,7 +152,7 @@ export default function InteractiveMap() {
     });
   }, []);
 
-  // Zoom slider: maps 0-100 to viewBox width (MAX_W → MIN_W)
+  // Zoom slider: maps 0-100 to viewBox width (MAX_W → MIN_W) — SVG only
   const handleSliderZoom = useCallback((value: number) => {
     setVb((prev) => {
       const newW = MAX_W - (value / 100) * (MAX_W - MIN_W);
@@ -245,36 +268,54 @@ export default function InteractiveMap() {
 
   const viewBoxStr = `${vb.x} ${vb.y} ${vb.w} ${vb.h}`;
 
-  // Sync: compute Google Maps zoom level from SVG viewBox width
-  // SVG w=470 → GM zoom ~5, w=40 → GM zoom ~16
-  const gmZoom = Math.round(5 + (1 - (vb.w - MIN_W) / (MAX_W - MIN_W)) * 11);
-
-  // For future pan sync
-
   // Default: protobuf embed, no pin, centered on eastern Indonesia
   const mapsUrlDefault = `https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d6367616.0!2d117.5!3d-2.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sid!4v1`;
 
-  // With marker: simple embed centers on the coordinate + shows pin
-  const [markerLat, setMarkerLat] = useState<number | null>(null);
-  const [markerLng, setMarkerLng] = useState<number | null>(null);
-
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const mapsUrlWithMarker = (markerLat !== null && markerLng !== null)
     ? `https://maps.google.com/maps?q=${markerLat},${markerLng}&z=${gmZoom}&output=embed`
-    : mapsUrlDefault;
+    : null;
 
-  const handleGoToCoord = useCallback(() => {
+  // Iframe URL: debounce zoom changes, immediate for marker changes
+  const [debouncedUrl, setDebouncedUrl] = useState(mapsUrlDefault);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (!calibrationMode) return;
+
+    const targetUrl = mapsUrlWithMarker ?? mapsUrlDefault;
+
+    if (mapsSync) {
+      clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => {
+        setDebouncedUrl(targetUrl);
+      }, 300);
+      return () => clearTimeout(debounceTimer.current);
+    }
+
+    setDebouncedUrl(targetUrl);
+  }, [gmZoom, markerLat, markerLng, calibrationMode, mapsSync, mapsUrlWithMarker, mapsUrlDefault]);
+
+  const handleCoordInput = useCallback(() => {
     const parts = coordInput.split(",").map((s) => parseFloat(s.trim()));
     if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
       setMarkerLat(parts[0]);
       setMarkerLng(parts[1]);
+      setDebouncedUrl(
+        `https://maps.google.com/maps?q=${parts[0]},${parts[1]}&z=${gmZoom}&output=embed`
+      );
+    } else {
+      setMarkerLat(null);
+      setMarkerLng(null);
     }
-  }, [coordInput]);
+  }, [coordInput, gmZoom]);
 
   const clearMarker = useCallback(() => {
     setMarkerLat(null);
     setMarkerLng(null);
     setCoordInput("");
-  }, []);
+    setDebouncedUrl(mapsUrlDefault);
+  }, [mapsUrlDefault]);
 
   return (
     <div className="map-layout">
@@ -283,8 +324,8 @@ export default function InteractiveMap() {
         {calibrationMode && (
           <div className="calibration-bg">
             <iframe
-              key={mapsUrlWithMarker}
-              src={mapsSync ? mapsUrlWithMarker : mapsUrlDefault}
+              ref={iframeRef}
+              src={debouncedUrl}
               width="100%"
               height="100%"
               style={{ border: 0 }}
@@ -431,8 +472,15 @@ export default function InteractiveMap() {
                 className={`sync-toggle${mapsSync ? " active" : ""}`}
                 onClick={() => setMapsSync((v) => !v)}
               >
-                {mapsSync ? "🔗 Sync zoom ON" : "⛓️ Sync zoom OFF"}
+                {mapsSync ? "🔗 Sync ON" : "⛓️ Sync OFF"}
               </button>
+            </div>
+
+            <div className="gm-zoom-row">
+              <span className="gm-zoom-label">Maps zoom:</span>
+              <button type="button" className="gm-zoom-btn" onClick={gmZoomOut}>−</button>
+              <span className="gm-zoom-value">{gmZoom}</span>
+              <button type="button" className="gm-zoom-btn" onClick={gmZoomIn}>+</button>
             </div>
 
             <div className="coord-input-group">
@@ -442,10 +490,9 @@ export default function InteractiveMap() {
                 placeholder="-5.198544, 119.446975"
                 value={coordInput}
                 onChange={(e) => setCoordInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGoToCoord()}
+                onKeyDown={(e) => e.key === "Enter" && handleCoordInput()}
                 className="coord-input"
               />
-              <button type="button" className="coord-go-btn" onClick={handleGoToCoord}>Go</button>
               {markerLat !== null && (
                 <button type="button" className="coord-clear-btn" onClick={clearMarker}>×</button>
               )}

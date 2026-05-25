@@ -363,6 +363,50 @@
   color: #86efac;
 }
 
+/* GM zoom +/- buttons */
+.gm-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.gm-zoom-label {
+  font-size: 11px;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.gm-zoom-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease;
+}
+
+.gm-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.gm-zoom-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #f0f9ff;
+  min-width: 20px;
+  text-align: center;
+}
+
 /* Lat/Lng input group */
 .coord-input-group {
   display: flex;
@@ -395,21 +439,6 @@
 
 .coord-input:focus {
   border-color: var(--eac-primary);
-}
-
-.coord-go-btn {
-  padding: 3px 8px;
-  border: 1px solid var(--eac-primary);
-  border-radius: 4px;
-  background: var(--eac-primary);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.coord-go-btn:hover {
-  background: #3b82f6;
 }
 
 .coord-clear-btn {
