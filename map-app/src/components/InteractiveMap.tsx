@@ -19,9 +19,13 @@ interface SvgPath {
 type VB = { x: number; y: number; w: number; h: number };
 
 const DEFAULT_VB: VB = { x: 500, y: 10, w: 470, h: 320 };
-const ZOOM_FACTOR = 0.08;
-const MIN_W = 60;
+const MIN_W = 40;
 const MAX_W = 600;
+const BASE_FACTOR = 0.08;
+
+// Zoom precision: multiplier how fine each scroll/slider step is
+const ZOOM_PRESETS = { x1: 1, x5: 5, x10: 10 } as const;
+type ZoomPreset = keyof typeof ZOOM_PRESETS;
 
 const targetIndices = new Set(Object.keys(pathToProvince).map(Number));
 
@@ -78,6 +82,7 @@ export default function InteractiveMap() {
   const [calibrationMode, setCalibrationMode] = useState(false);
   const [svgOpacity, setSvgOpacity] = useState(0.85);
   const [svgLocked, setSvgLocked] = useState(false);
+  const [zoomPreset, setZoomPreset] = useState<ZoomPreset>("x1");
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
@@ -122,13 +127,32 @@ export default function InteractiveMap() {
     });
   }, []);
 
+  // Zoom slider: maps 0-100 to viewBox width (MAX_W → MIN_W)
+  const handleSliderZoom = useCallback((value: number) => {
+    setVb((prev) => {
+      const newW = MAX_W - (value / 100) * (MAX_W - MIN_W);
+      const scale = newW / prev.w;
+      const cx = prev.x + prev.w / 2;
+      const cy = prev.y + prev.h / 2;
+      return {
+        x: cx - (prev.w / 2) * scale,
+        y: cy - (prev.h / 2) * scale,
+        w: newW,
+        h: prev.h * scale,
+      };
+    });
+  }, []);
+
+  const sliderValue = Math.round(((MAX_W - vb.w) / (MAX_W - MIN_W)) * 100);
+
   const handleWheel = useCallback(
     (e: WheelEvent<SVGSVGElement>) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? ZOOM_FACTOR : -ZOOM_FACTOR;
+      const factor = BASE_FACTOR * ZOOM_PRESETS[zoomPreset];
+      const delta = e.deltaY > 0 ? factor : -factor;
       zoomAt(e.clientX, e.clientY, delta);
     },
-    [zoomAt]
+    [zoomAt, zoomPreset]
   );
 
   // Pan
@@ -314,8 +338,28 @@ export default function InteractiveMap() {
 
         {/* Zoom controls */}
         <div className="zoom-controls">
-          <button type="button" className="zoom-btn" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, -ZOOM_FACTOR)} title="Zoom In">+</button>
-          <button type="button" className="zoom-btn" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, ZOOM_FACTOR)} title="Zoom Out">−</button>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={sliderValue}
+            onChange={(e) => handleSliderZoom(parseInt(e.target.value))}
+            className="zoom-slider"
+            title="Zoom Level"
+          />
+          <div className="zoom-preset-group">
+            {(["x1", "x5", "x10"] as ZoomPreset[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`zoom-preset-btn${zoomPreset === p ? " active" : ""}`}
+                onClick={() => setZoomPreset(p)}
+                title={`Zoom precision ${p}`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
           <button type="button" className="zoom-btn zoom-reset" onClick={resetZoom} title="Reset">⟲</button>
           <button
             type="button"

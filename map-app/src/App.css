@@ -127,8 +127,87 @@
   left: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   z-index: 5;
+}
+
+/* Vertical zoom slider */
+.zoom-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 120px;
+  height: 20px;
+  accent-color: var(--eac-primary);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+.zoom-slider::-webkit-slider-runnable-track {
+  width: 4px;
+  height: 100%;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--eac-primary);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+  margin-left: -5px;
+}
+
+.zoom-slider::-moz-range-track {
+  width: 4px;
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.zoom-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--eac-primary);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: grab;
+}
+
+/* Zoom preset buttons (x1 x5 x10) */
+.zoom-preset-group {
+  display: flex;
+  gap: 2px;
+}
+
+.zoom-preset-btn {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  line-height: 1.4;
+}
+
+.zoom-preset-btn:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.zoom-preset-btn.active {
+  background: var(--eac-primary);
+  color: #fff;
+  border-color: var(--eac-primary);
 }
 
 .zoom-btn {
@@ -168,6 +247,14 @@
 }
 
 @media (prefers-color-scheme: dark) {
+  .zoom-preset-btn {
+    background: rgba(22, 23, 29, 0.9);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .zoom-preset-btn:hover {
+    background: rgba(30, 32, 40, 0.95);
+  }
   .zoom-btn {
     background: rgba(22, 23, 29, 0.9);
     border-color: var(--border);
