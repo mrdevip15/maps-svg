@@ -406,6 +406,32 @@ export default function InteractiveMap() {
     setTooltip(null);
   }, []);
 
+  const handleRegionClick = useCallback(
+    (idx: number, e: MouseEvent<SVGPathElement>) => {
+      if (calibrationMode) return;
+      if (!targetIndices.has(idx)) return;
+
+      e.stopPropagation();
+      const bbox = e.currentTarget.getBBox();
+      const aspect = DEFAULT_VB.w / DEFAULT_VB.h;
+      const padding = Math.max(8, Math.max(bbox.width, bbox.height) * 0.12);
+      const paddedW = bbox.width + padding * 2;
+      const paddedH = bbox.height + padding * 2;
+      const nextW = Math.min(MAX_W, Math.max(MIN_W, Math.max(paddedW, paddedH * aspect)));
+      const nextH = nextW / aspect;
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+
+      setVb({
+        x: cx - nextW / 2,
+        y: cy - nextH / 2,
+        w: nextW,
+        h: nextH,
+      });
+    },
+    [calibrationMode]
+  );
+
   const handleMarkerEnter = useCallback((branch: EacBranch, e: MouseEvent) => {
     setActiveBranchId(branch.id);
     setTooltip({
@@ -548,6 +574,7 @@ export default function InteractiveMap() {
                 }}
                 onMouseEnter={isTarget ? (e) => handleProvinceEnter(index, e) : undefined}
                 onMouseLeave={isTarget ? handleProvinceLeave : undefined}
+                onClick={isTarget ? (e) => handleRegionClick(index, e) : undefined}
               />
             );
           })}
