@@ -19,8 +19,8 @@ interface SvgPath {
 type VB = { x: number; y: number; w: number; h: number };
 
 const DEFAULT_VB: VB = { x: 500, y: 10, w: 470, h: 320 };
-const ZOOM_FACTOR = 0.15;
-const MIN_W = 100;
+const ZOOM_FACTOR = 0.08;
+const MIN_W = 60;
 const MAX_W = 600;
 
 const targetIndices = new Set(Object.keys(pathToProvince).map(Number));
@@ -75,6 +75,9 @@ export default function InteractiveMap() {
   const [svgRaw, setSvgRaw] = useState<string | null>(null);
   const [vb, setVb] = useState<VB>(DEFAULT_VB);
   const [debugPoint, setDebugPoint] = useState<{ x: number; y: number } | null>(null);
+  const [calibrationMode, setCalibrationMode] = useState(false);
+  const [svgOpacity, setSvgOpacity] = useState(0.85);
+  const [svgLocked, setSvgLocked] = useState(false);
   const isPanning = useRef(false);
   const panStart = useRef({ mx: 0, my: 0, vbX: 0, vbY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
@@ -219,6 +222,22 @@ export default function InteractiveMap() {
   return (
     <div className="map-layout">
       <div className="map-container" onMouseMove={tooltip ? moveTooltip : undefined}>
+        {/* Google Maps background for calibration */}
+        {calibrationMode && (
+          <div className="calibration-bg">
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d6367616.0!2d117.5!3d-2.0!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2sid!4v1&layer=none&maptype=satellite"
+              width="100%"
+              height="100%"
+              style={{ border: 0 }}
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              title="Google Maps Satellite"
+            />
+          </div>
+        )}
+
         <svg
           ref={svgRef}
           viewBox={viewBoxStr}
@@ -227,7 +246,12 @@ export default function InteractiveMap() {
           onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onClick={handleDebugClick}
-          style={{ cursor: isPanning.current ? "grabbing" : "grab" }}
+          style={{
+            cursor: svgLocked ? "default" : isPanning.current ? "grabbing" : "grab",
+            opacity: calibrationMode ? svgOpacity : 1,
+            background: calibrationMode ? "transparent" : undefined,
+            pointerEvents: svgLocked ? "none" : undefined,
+          }}
         >
           {paths.map(({ d, fill, index }) => {
             const isTarget = targetIndices.has(index);
@@ -293,7 +317,41 @@ export default function InteractiveMap() {
           <button type="button" className="zoom-btn" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, -ZOOM_FACTOR)} title="Zoom In">+</button>
           <button type="button" className="zoom-btn" onClick={() => zoomAt(window.innerWidth / 2, window.innerHeight / 2, ZOOM_FACTOR)} title="Zoom Out">−</button>
           <button type="button" className="zoom-btn zoom-reset" onClick={resetZoom} title="Reset">⟲</button>
+          <button
+            type="button"
+            className={`zoom-btn calibrate-btn${calibrationMode ? " active" : ""}`}
+            onClick={() => setCalibrationMode((v) => !v)}
+            title="Toggle Calibration Mode"
+          >🎯</button>
         </div>
+
+        {/* Calibration opacity slider */}
+        {calibrationMode && (
+          <div className="calibration-panel">
+            <label className="calibration-label">
+              SVG Opacity: <strong>{Math.round(svgOpacity * 100)}%</strong>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={svgOpacity}
+              onChange={(e) => setSvgOpacity(parseFloat(e.target.value))}
+              className="calibration-slider"
+            />
+            <button
+              type="button"
+              className={`lock-toggle${svgLocked ? " locked" : ""}`}
+              onClick={() => setSvgLocked((v) => !v)}
+            >
+              {svgLocked ? "🔓 Unlock SVG — interaksi Google Maps" : "🔒 Lock SVG — interaksi Google Maps"}
+            </button>
+            <p className="calibration-hint">
+              Lock SVG → pan/zoom Google Maps di bawah. Unlock → klik peta untuk ambil koordinat.
+            </p>
+          </div>
+        )}
 
         <div className="legend" aria-label="Legenda marker cabang">
           <div className="legend-item"><span className="legend-dot regular" /> Cabang reguler</div>

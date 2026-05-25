@@ -161,6 +161,12 @@
   font-size: 14px;
 }
 
+.zoom-btn.calibrate-btn.active {
+  background: var(--eac-highlight);
+  color: #fff;
+  border-color: var(--eac-highlight);
+}
+
 @media (prefers-color-scheme: dark) {
   .zoom-btn {
     background: rgba(22, 23, 29, 0.9);
@@ -170,6 +176,74 @@
   .zoom-btn:hover {
     background: rgba(30, 32, 40, 0.95);
   }
+}
+
+/* ========== Calibration Mode ========== */
+
+.calibration-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 12px 0 0 12px;
+  overflow: hidden;
+}
+
+.calibration-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  background: rgba(15, 23, 42, 0.94);
+  color: #f0f9ff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  min-width: 200px;
+}
+
+.calibration-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.calibration-slider {
+  width: 100%;
+  accent-color: var(--eac-primary);
+  cursor: pointer;
+}
+
+.calibration-hint {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.lock-toggle {
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+  font-family: system-ui, sans-serif;
+}
+
+.lock-toggle:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.lock-toggle.locked {
+  background: var(--eac-highlight);
+  border-color: var(--eac-highlight);
+  color: #fff;
+  font-weight: 600;
 }
 
 /* ========== Debug Coordinate Picker ========== */
