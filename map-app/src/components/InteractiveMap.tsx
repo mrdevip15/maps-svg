@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, useRef, useEffect, type MouseEvent } from "react";
 import { eacBranches, type EacBranch } from "../data/eacBranches";
 import { pathToProvince } from "../data/provinceMap";
+import { projectToSvg } from "../data/projection";
 
 interface TooltipData {
   title: string;
@@ -300,8 +301,9 @@ export default function InteractiveMap() {
           })}
 
           {/* Only show markers when a region is selected */}
-          {selectedBranches.map((branch) => {
+          {selectedBranches.map((branch, i) => {
             const isBranchActive = branch.id === activeBranchId;
+            const { x: bx, y: by } = projectToSvg(branch.lat, branch.lng);
 
             return (
               <g
@@ -309,7 +311,7 @@ export default function InteractiveMap() {
                 className={`branch-marker${branch.special ? " special" : ""}${branch.highlighted ? " highlighted" : ""}${
                   isBranchActive ? " active" : ""
                 }`}
-                style={{ opacity: 1, animation: "marker-appear 0.3s ease forwards" }}
+                style={{ opacity: 1, animation: `marker-appear 0.3s ${i * 0.05}s ease both` }}
                 onMouseEnter={(e) => handleMarkerEnter(branch, e)}
                 onMouseLeave={handleMarkerLeave}
                 onClick={(e) => {
@@ -317,17 +319,17 @@ export default function InteractiveMap() {
                   setActiveBranchId(branch.id);
                 }}
               >
-                {branch.highlighted && <circle className="marker-pulse" cx={branch.x} cy={branch.y} r="8" />}
+                {branch.highlighted && <circle className="marker-pulse" cx={bx} cy={by} r="8" />}
                 <circle
-                  cx={branch.x}
-                  cy={branch.y}
+                  cx={bx}
+                  cy={by}
                   r={branch.highlighted ? 6 : 4}
                   className="marker-dot"
                 />
                 {branch.special && !branch.highlighted && (
                   <path
                     className="marker-star"
-                    d={`M ${branch.x} ${branch.y - 8} L ${branch.x + 4} ${branch.y - 4} L ${branch.x} ${branch.y} L ${branch.x - 4} ${branch.y - 4} Z`}
+                    d={`M ${bx} ${by - 8} L ${bx + 4} ${by - 4} L ${bx} ${by} L ${bx - 4} ${by - 4} Z`}
                   />
                 )}
               </g>
