@@ -303,7 +303,7 @@ export default function InteractiveMap() {
   }, [referenceOutput]);
 
   if (typeof window !== "undefined" && !svgRaw) {
-    fetch("/all_region.svg")
+    fetch(`${import.meta.env.BASE_URL}all_region.svg`)
       .then((r) => r.text())
       .then(setSvgRaw)
       .catch(console.error);
@@ -534,7 +534,7 @@ export default function InteractiveMap() {
     setActiveBranchId(branch.id);
     setTooltip({
       title: `${branch.name}${branch.special ? " ✦" : ""}`,
-      lines: [branch.area, branch.region],
+      lines: [branch.area, branch.locationDetail ?? branch.city, `${branch.city}, ${branch.region}`],
       x: e.clientX + 14,
       y: e.clientY - 10,
     });
@@ -986,6 +986,7 @@ export default function InteractiveMap() {
                           <span className="branch-text">
                             <span className="branch-name">{branch.name}{branch.special ? " ✦" : ""}</span>
                             <span className="branch-area">{branch.area}</span>
+                            {branch.locationDetail && <span className="branch-location">{branch.locationDetail}</span>}
                           </span>
                         </button>
                       ))}

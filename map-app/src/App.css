@@ -1094,6 +1094,15 @@
   text-overflow: ellipsis;
 }
 
+.branch-location {
+  font-size: 10px;
+  color: var(--eac-primary);
+  opacity: 0.86;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ========== Footer ========== */
 
 .footer {
